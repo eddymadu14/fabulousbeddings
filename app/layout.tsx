@@ -2,6 +2,7 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { DM_Mono, Lora } from 'next/font/google'
 import './globals.css'
+import VisitorBootstrap from '@/components/visitor-bootstrap'
 
 const lora = Lora({ subsets: ['latin'], variable: '--font-lora' })
 const dmMono = DM_Mono({ subsets: ['latin'], weight: ['400', '500'], variable: '--font-dm-mono' })
@@ -19,5 +20,8 @@ export const viewport: Viewport = {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en" className="bg-background"><body className={`${lora.variable} ${dmMono.variable} antialiased`}>{children}{process.env.NODE_ENV === 'production' && <Analytics />}</body></html>
+  return <html lang="en" className="bg-background"><body className={`${lora.variable} ${dmMono.variable} antialiased`}>
+  <VisitorBootstrap />
+  {children}
+  {process.env.NODE_ENV === 'production' && <Analytics />}</body></html>
 }
