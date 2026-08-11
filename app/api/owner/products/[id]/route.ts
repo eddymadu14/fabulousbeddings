@@ -189,7 +189,7 @@ if (body.slug !== undefined) {
   const existing = await db
     .select({ id: products.id })
     .from(products)
-    .where(eq(products.slug, updates.slug))
+    .where(eq(products.id, productId))
     .limit(1)
 
   if (
