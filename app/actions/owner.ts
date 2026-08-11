@@ -118,7 +118,7 @@ try {
 for (const file of input.images) {
 if (!file.type.startsWith('image/')) {
 throw new Error(
-"Invalid image file: ${file.name}",
+`Invalid image file: ${file.name}`,
 )
 }
 
@@ -234,7 +234,7 @@ invalidate: true,
 )
 } catch (cleanupError) {
 console.error(
-"Failed to clean up Cloudinary image ${image.publicId}:",
+`Failed to clean up Cloudinary image ${image.publicId}:`,
 cleanupError,
 )
 }
