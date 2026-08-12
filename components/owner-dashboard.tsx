@@ -3,12 +3,21 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-import { addProduct } from '@/app/actions/owner'
+import { addProduct, createCategory } from '@/app/actions/owner'
 
 type ProductCategory = {
 id: number
 name: string
 slug: string
+}
+
+type ProductVariant = {
+  id: number
+  productId: number
+  name: string
+  price: number
+  stock: number
+  active: boolean
 }
 
 export type EditableProduct = {
@@ -25,6 +34,7 @@ image: string
 stock: number
 status: string
 featured: boolean
+variants: ProductVariant[]
 }
 
 type ProductFormProps = {
@@ -89,6 +99,14 @@ publicId: string | null
 sortOrder: number
 }
 
+type ProductVariantInput = {
+  id?: number
+  size: string
+  color: string
+  price: string
+  stock: string
+}
+
 
 export function ProductForm({
 categories,
@@ -138,7 +156,21 @@ useState('')
 const [status, setStatus] =
 useState('published')
 
+const [variants, setVariants] =
+  useState<ProductVariantInput[]>([])
 
+const [newCategory, setNewCategory] =
+  useState('')
+
+const [creatingCategory, setCreatingCategory] =
+  useState(false)
+
+const [categoryOptions, setCategoryOptions] =
+  useState(categories)
+
+  useEffect(() => {
+  setCategoryOptions(categories)
+}, [categories])
 
 useEffect(() => {
   if (!product) {
@@ -332,6 +364,95 @@ current.filter(
 )
 }
 
+async function handleCreateCategory() {
+  const name = newCategory.trim()
+
+  if (!name) {
+    setMessage(
+      'Enter a category name first.',
+    )
+    return
+  }
+
+  setCreatingCategory(true)
+  setMessage('')
+
+  try {
+    const category =
+      await createCategory({ name })
+
+    setCategoryOptions((current) => {
+      if (
+        current.some(
+          (item) =>
+            item.id === category.id,
+        )
+      ) {
+        return current
+      }
+
+      return [...current, category].sort(
+        (a, b) =>
+          a.name.localeCompare(b.name),
+      )
+    })
+
+    setCategory(category.name)
+    setNewCategory('')
+
+    setMessage(
+      `Category "${category.name}" created.`,
+    )
+  } catch (error) {
+    setMessage(
+      error instanceof Error
+        ? error.message
+        : 'Failed to create category.',
+    )
+  } finally {
+    setCreatingCategory(false)
+  }
+}
+
+
+function addVariant() {
+  setVariants((current) => [
+    ...current,
+    {
+      size: '',
+      color: '',
+      price: price,
+      stock: '0',
+    },
+  ])
+}
+
+function updateVariant(
+  index: number,
+  field: keyof ProductVariantInput,
+  value: string,
+) {
+  setVariants((current) =>
+    current.map((variant, variantIndex) =>
+      variantIndex === index
+        ? {
+            ...variant,
+            [field]: value,
+          }
+        : variant,
+    ),
+  )
+}
+
+function removeVariant(index: number) {
+  setVariants((current) =>
+    current.filter(
+      (_, variantIndex) =>
+        variantIndex !== index,
+    ),
+  )
+}
+
 async function submit(
 event: React.FormEvent<HTMLFormElement>,
 ) {
@@ -353,24 +474,66 @@ if (!product) {
   setMessage('')
 
   try {
-    await addProduct({
-      name: name.trim(),
-      category,
-      description: description.trim(),
-      price: Number(price),
-      compareAtPrice:
-        Number(compareAtPrice) ||
-        undefined,
-      stock: Number(stock),
-      status,
-      images: selectedFiles,
-    })
+  await addProduct({
+  name: name.trim(),
+  category,
+  description: description.trim(),
+  price: Number(price),
+  compareAtPrice:
+    Number(compareAtPrice) ||
+    undefined,
+  stock: Number(stock),
+  status,
+  images: selectedFiles,
+
+  variants: variants.map(
+    (variant) => ({
+      size: variant.size,
+      color: variant.color,
+      price: Number(variant.price),
+      stock: Number(variant.stock),
+    }),
+  ),
+})
 
     formElement.reset()
     setSelectedFiles([])
-    setMessage(
-      'Product created successfully.',
-    )
+setVariants([])
+setCategory('')
+setName('')
+setDescription('')
+setPrice('')
+setCompareAtPrice('')
+setStock('')
+setStatus('published')
+
+const parsedVariants =
+  (product.variants ?? []).map(
+    (variant: ProductVariant) => {
+      const parts =
+        variant.name.split(' — ')
+
+      return {
+        id: variant.id,
+        size: parts[0] ?? '',
+        color:
+          parts.slice(1).join(' — ') ??
+          '',
+        price: String(
+          variant.price,
+        ),
+        stock: String(
+          variant.stock,
+        ),
+      }
+    },
+  )
+
+setVariants(parsedVariants)
+
+setMessage(
+  'Product created successfully.',
+)
   } catch (error) {
     console.error(
       'Failed to create product:',
@@ -442,6 +605,23 @@ try {
     'status',
     status,
   )
+
+  formData.append(
+  'variants',
+  JSON.stringify(
+    variants.map((variant) => ({
+      id: variant.id,
+      size: variant.size.trim(),
+      color: variant.color.trim(),
+      price: Number(
+        variant.price,
+      ),
+      stock: Number(
+        variant.stock,
+      ),
+    })),
+  ),
+)
 
   if (removedImageIds.length) {
     formData.append(
@@ -551,7 +731,8 @@ Product name
     />
   </label>
 
-  <label className="flex flex-col gap-2 text-sm">
+<div className="flex flex-col gap-3 text-sm">
+  <label className="flex flex-col gap-2">
     Category
 
     <select
@@ -561,14 +742,16 @@ Product name
         setCategory(event.target.value)
       }
       required
-      disabled={saving}
+      disabled={
+        saving || creatingCategory
+      }
       className="border border-border bg-background px-4 py-3"
     >
       <option value="">
         Select a category
       </option>
 
-      {categories.map(
+      {categoryOptions.map(
         (item) => (
           <option
             key={item.id}
@@ -580,6 +763,38 @@ Product name
       )}
     </select>
   </label>
+
+  <div className="flex gap-2">
+    <input
+      value={newCategory}
+      onChange={(event) =>
+        setNewCategory(
+          event.target.value,
+        )
+      }
+      disabled={
+        saving || creatingCategory
+      }
+      placeholder="New category"
+      className="min-w-0 flex-1 border border-border bg-background px-4 py-2"
+    />
+
+    <button
+      type="button"
+      onClick={handleCreateCategory}
+      disabled={
+        saving ||
+        creatingCategory ||
+        !newCategory.trim()
+      }
+      className="border border-border px-4 py-2 text-xs uppercase tracking-wider disabled:opacity-50"
+    >
+      {creatingCategory
+        ? 'Creating...'
+        : 'Create'}
+    </button>
+  </div>
+</div>
 
   <label className="flex flex-col gap-2 text-sm md:col-span-2">
     Description
@@ -674,6 +889,114 @@ Product name
       </option>
     </select>
   </label>
+
+  <div className="space-y-4 md:col-span-2">
+  <div className="flex items-start justify-between gap-4">
+    <div>
+      <p className="text-sm font-medium">
+        Product variants
+      </p>
+
+      <p className="mt-1 text-xs text-muted-foreground">
+        Add size and color combinations with
+        their own price and stock.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      onClick={addVariant}
+      disabled={saving}
+      className="border border-border px-4 py-2 text-xs uppercase tracking-wider disabled:opacity-50"
+    >
+      + Add variant
+    </button>
+  </div>
+
+  {variants.length > 0 && (
+    <div className="space-y-3">
+      {variants.map(
+        (variant, index) => (
+          <div
+            key={index}
+            className="grid gap-3 border border-border p-4 md:grid-cols-[1fr_1fr_1fr_120px_auto]"
+          >
+            <input
+              value={variant.size}
+              onChange={(event) =>
+                updateVariant(
+                  index,
+                  'size',
+                  event.target.value,
+                )
+              }
+              disabled={saving}
+              placeholder="Size e.g. 6 × 6"
+              className="border border-border bg-background px-3 py-2 text-sm"
+            />
+
+            <input
+              value={variant.color}
+              onChange={(event) =>
+                updateVariant(
+                  index,
+                  'color',
+                  event.target.value,
+                )
+              }
+              disabled={saving}
+              placeholder="Color e.g. White"
+              className="border border-border bg-background px-3 py-2 text-sm"
+            />
+
+            <input
+              type="number"
+              min="0"
+              value={variant.price}
+              onChange={(event) =>
+                updateVariant(
+                  index,
+                  'price',
+                  event.target.value,
+                )
+              }
+              disabled={saving}
+              placeholder="Price"
+              className="border border-border bg-background px-3 py-2 text-sm"
+            />
+
+            <input
+              type="number"
+              min="0"
+              value={variant.stock}
+              onChange={(event) =>
+                updateVariant(
+                  index,
+                  'stock',
+                  event.target.value,
+                )
+              }
+              disabled={saving}
+              placeholder="Stock"
+              className="border border-border bg-background px-3 py-2 text-sm"
+            />
+
+            <button
+              type="button"
+              onClick={() =>
+                removeVariant(index)
+              }
+              disabled={saving}
+              className="text-xs text-destructive"
+            >
+              Remove
+            </button>
+          </div>
+        ),
+      )}
+    </div>
+  )}
+</div>
 
   <div className="space-y-4 md:col-span-2">
     <div>

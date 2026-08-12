@@ -9,56 +9,105 @@ categories,
 orders,
 pageVisits,
 productImages,
+productVariants,
 products,
 } from '@/lib/db/schema'
 import { requireOwner } from '@/lib/auth/require-owner'
 
 import cloudinary from '@/lib/cloudinary'
 
+
+
+
 export async function getOwnerProducts() {
-const owner = await requireOwner()
+  const owner = await requireOwner()
 
-if (!owner) {
-throw new Error('Unauthorized')
-}
+  if (!owner) {
+    throw new Error('Unauthorized')
+  }
 
-return db
-  .select({
-    id: products.id,
-    name: products.name,
-    slug: products.slug,
-    description: products.description,
-    price: products.price,
-    compareAtPrice: products.compareAtPrice,
-    image: products.image,
-    stock: products.stock,
-    status: products.status,
-    featured: products.featured,
-    categoryId: products.categoryId,
-    category: categories.name,
-    createdBy: products.createdBy,
-    createdAt: products.createdAt,
-    updatedAt: products.updatedAt,
-  })
-  .from(products)
-  .leftJoin(
-    categories,
-    eq(products.categoryId, categories.id),
-  )
-  .where(eq(products.createdBy, owner.id))
-  .orderBy(desc(products.createdAt))
+  const items = await db
+    .select({
+      id: products.id,
+      name: products.name,
+      slug: products.slug,
+      description: products.description,
+      price: products.price,
+      compareAtPrice:
+        products.compareAtPrice,
+      image: products.image,
+      stock: products.stock,
+      status: products.status,
+      featured: products.featured,
+      categoryId: products.categoryId,
+      category: categories.name,
+      createdBy: products.createdBy,
+      createdAt: products.createdAt,
+      updatedAt: products.updatedAt,
+    })
+    .from(products)
+    .leftJoin(
+      categories,
+      eq(
+        products.categoryId,
+        categories.id,
+      ),
+    )
+    .where(
+      eq(
+        products.createdBy,
+        owner.id,
+      ),
+    )
+    .orderBy(
+      desc(products.createdAt),
+    )
+
+  if (!items.length) {
+    return []
+  }
+
+  const variants =
+    await db
+      .select({
+        id: productVariants.id,
+        productId:
+          productVariants.productId,
+        name: productVariants.name,
+        price: productVariants.price,
+        stock: productVariants.stock,
+        active:
+          productVariants.active,
+      })
+      .from(productVariants)
+
+  return items.map((product) => ({
+    ...product,
+
+    variants: variants.filter(
+      (variant) =>
+        variant.productId ===
+        product.id,
+    ),
+  }))
 }
 
 
 export async function addProduct(input: {
-name: string
-category: string
-description: string
-price: number
-compareAtPrice?: number
-stock: number
-status: string
-images: File[]
+  name: string
+  category: string
+  description: string
+  price: number
+  compareAtPrice?: number
+  stock: number
+  status: string
+  images: File[]
+  variants?: {
+    size: string
+    color: string
+    price: number
+    stock: number
+  }[]
 }) {
 const owner = await requireOwner()
 
@@ -70,6 +119,51 @@ if (!input.images.length) {
 throw new Error(
 'At least one product image is required',
 )
+}
+
+const variants = input.variants ?? []
+
+for (const variant of variants) {
+  const size = variant.size.trim()
+  const color = variant.color.trim()
+
+  if (!size || !color) {
+    throw new Error(
+      'Every variant must have both a size and color',
+    )
+  }
+
+  if (
+    !Number.isFinite(variant.price) ||
+    variant.price < 0
+  ) {
+    throw new Error(
+      `Invalid price for ${size} / ${color}`,
+    )
+  }
+
+  if (
+    !Number.isInteger(variant.stock) ||
+    variant.stock < 0
+  ) {
+    throw new Error(
+      `Invalid stock for ${size} / ${color}`,
+    )
+  }
+}
+
+const variantNames = variants.map(
+  (variant) =>
+    `${variant.size.trim()} — ${variant.color.trim()}`,
+)
+
+if (
+  new Set(variantNames).size !==
+  variantNames.length
+) {
+  throw new Error(
+    'Duplicate size/color variants are not allowed',
+  )
 }
 
 const categoryName = input.category.trim()
@@ -176,45 +270,74 @@ const primaryImage = uploadedImages[0]
  * Create the product using the first Cloudinary
  * image as the primary image.
  */
-const [product] = await db
-  .insert(products)
-  .values({
-    createdBy: owner.id,
-    categoryId: category.id,
-    name: input.name.trim(),
-    slug,
-    description: input.description.trim(),
-    price: input.price,
-    compareAtPrice:
-      input.compareAtPrice ?? null,
-    image: primaryImage.secureUrl,
-    stock: input.stock,
-    status: input.status,
-  })
-  .returning()
 
-if (!product) {
-  throw new Error(
-    'Failed to create product',
-  )
-}
 
 /*
  * Store every uploaded image in product_images.
  */
-await db.insert(productImages).values(
-  uploadedImages.map((image, index) => ({
-    productId: product.id,
-    url: image.secureUrl,
-    publicId: image.publicId,
-    sortOrder: index,
-  })),
+
+
+
+const result = await db.transaction(
+  async (tx) => {
+    const [product] = await tx
+      .insert(products)
+      .values({
+        createdBy: owner.id,
+        categoryId: category.id,
+        name: input.name.trim(),
+        slug,
+        description: input.description.trim(),
+        price: input.price,
+        compareAtPrice:
+          input.compareAtPrice ?? null,
+        image: primaryImage.secureUrl,
+        stock: input.stock,
+        status: input.status,
+      })
+      .returning()
+
+    if (!product) {
+      throw new Error(
+        'Failed to create product',
+      )
+    }
+
+    await tx
+      .insert(productImages)
+      .values(
+        uploadedImages.map(
+          (image, index) => ({
+            productId: product.id,
+            url: image.secureUrl,
+            publicId: image.publicId,
+            sortOrder: index,
+          }),
+        ),
+      )
+
+    if (variants.length) {
+      await tx
+        .insert(productVariants)
+        .values(
+          variants.map((variant) => ({
+            productId: product.id,
+            name: `${variant.size.trim()} — ${variant.color.trim()}`,
+            price: variant.price,
+            stock: variant.stock,
+            active: true,
+          })),
+        )
+    }
+
+    return product
+  },
 )
 
 revalidatePath('/owner/products')
 revalidatePath('/')
 
-return product
+return result
 
 } catch (error) {
 /*
@@ -333,4 +456,87 @@ export async function getOwnerCategories() {
     .from(categories)
     .where(eq(categories.active, true))
     .orderBy(categories.name)
+}
+
+export async function createCategory(input: {
+  name: string
+}) {
+  const owner = await requireOwner()
+
+  if (!owner) {
+    throw new Error('Unauthorized')
+  }
+
+  const name = input.name.trim()
+
+  if (!name) {
+    throw new Error('Category name is required')
+  }
+
+  if (name.length > 80) {
+    throw new Error(
+      'Category name must be 80 characters or less',
+    )
+  }
+
+  const slugBase = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '')
+
+  if (!slugBase) {
+    throw new Error('Category name is invalid')
+  }
+
+  const existing = await db
+    .select({
+      id: categories.id,
+    })
+    .from(categories)
+    .where(eq(categories.name, name))
+    .limit(1)
+
+  if (existing.length) {
+    throw new Error(
+      `Category "${name}" already exists`,
+    )
+  }
+
+  let slug = slugBase
+
+  const existingSlug = await db
+    .select({
+      id: categories.id,
+    })
+    .from(categories)
+    .where(eq(categories.slug, slug))
+    .limit(1)
+
+  if (existingSlug.length) {
+    slug = `${slugBase}-${Date.now()}`
+  }
+
+  const [category] = await db
+    .insert(categories)
+    .values({
+      name,
+      slug,
+      active: true,
+    })
+    .returning({
+      id: categories.id,
+      name: categories.name,
+      slug: categories.slug,
+    })
+
+  if (!category) {
+    throw new Error(
+      'Failed to create category',
+    )
+  }
+
+  revalidatePath('/owner/products')
+  revalidatePath('/')
+
+  return category
 }

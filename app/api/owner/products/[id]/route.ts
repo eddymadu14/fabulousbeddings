@@ -7,6 +7,7 @@ import {
 categories,
 productImages,
 products,
+productVariants,
 } from '@/lib/db/schema'
 import cloudinary from '@/lib/cloudinary'
 
@@ -282,6 +283,99 @@ const compareAtPriceValue =
   formData.get('compareAtPrice')
 const stockValue = formData.get('stock')
 const statusValue = formData.get('status')
+
+const variantsValue =
+  formData.get('variants')
+
+let variants: {
+  id?: number
+  size: string
+  color: string
+  price: number
+  stock: number
+}[] = []
+
+if (
+  typeof variantsValue ===
+    'string' &&
+  variantsValue.trim()
+) {
+  try {
+    const parsed =
+      JSON.parse(
+        variantsValue,
+      )
+
+    if (!Array.isArray(parsed)) {
+      throw new Error(
+        'Variants must be an array',
+      )
+    }
+
+    variants = parsed
+  } catch {
+    return NextResponse.json(
+      {
+        error:
+          'Invalid variants data',
+      },
+      {
+        status: 400,
+      },
+    )
+  }
+}
+
+for (const variant of variants) {
+  if (
+    !variant.size?.trim() ||
+    !variant.color?.trim()
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'Every variant must have a size and color',
+      },
+      {
+        status: 400,
+      },
+    )
+  }
+
+  if (
+    !Number.isFinite(
+      variant.price,
+    ) ||
+    variant.price < 0
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'Invalid variant price',
+      },
+      {
+        status: 400,
+      },
+    )
+  }
+
+  if (
+    !Number.isInteger(
+      variant.stock,
+    ) ||
+    variant.stock < 0
+  ) {
+    return NextResponse.json(
+      {
+        error:
+          'Invalid variant stock',
+      },
+      {
+        status: 400,
+      },
+    )
+  }
+}
 
 if (
   typeof nameValue !== 'string' ||
@@ -627,7 +721,104 @@ const [updatedProduct] =
             ),
           )
       }
+      const existingVariants =
+  await tx
+    .select({
+      id: productVariants.id,
+    })
+    .from(productVariants)
+    .where(
+      eq(
+        productVariants.productId,
+        productId,
+      ),
+    )
 
+const submittedVariantIds =
+  variants
+    .filter(
+      (variant) =>
+        Number.isInteger(
+          variant.id,
+        ),
+    )
+    .map(
+      (variant) =>
+        variant.id!,
+    )
+
+const variantsToDelete =
+  existingVariants
+    .map(
+      (variant) =>
+        variant.id,
+    )
+    .filter(
+      (id) =>
+        !submittedVariantIds.includes(
+          id,
+        ),
+    )
+
+for (const variantId of variantsToDelete) {
+  await tx
+    .delete(productVariants)
+    .where(
+      and(
+        eq(
+          productVariants.id,
+          variantId,
+        ),
+        eq(
+          productVariants.productId,
+          productId,
+        ),
+      ),
+    )
+}
+
+for (const variant of variants) {
+  const variantName =
+    `${variant.size.trim()} — ${variant.color.trim()}`
+
+  if (
+    variant.id !== undefined &&
+    Number.isInteger(
+      variant.id,
+    )
+  ) {
+    await tx
+      .update(productVariants)
+      .set({
+        name: variantName,
+        price: variant.price,
+        stock: variant.stock,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(
+            productVariants.id,
+            variant.id,
+          ),
+          eq(
+            productVariants.productId,
+            productId,
+          ),
+        ),
+      )
+  } else {
+    await tx
+      .insert(productVariants)
+      .values({
+        productId,
+        name: variantName,
+        price: variant.price,
+        stock: variant.stock,
+        active: true,
+      })
+  }
+}
       return [updated]
     },
   )
@@ -669,9 +860,31 @@ const images = await db
   )
   .orderBy(productImages.sortOrder)
 
+const variants =
+  await db
+    .select({
+      id: productVariants.id,
+      productId:
+        productVariants.productId,
+      name: productVariants.name,
+      price: productVariants.price,
+      stock: productVariants.stock,
+      active:
+        productVariants.active,
+    })
+    .from(productVariants)
+    .where(
+      eq(
+        productVariants.productId,
+        productId,
+      ),
+    )
+
+
 return NextResponse.json({
   ...updatedProduct,
   images,
+  variants,
 })
 
 } catch (error) {
