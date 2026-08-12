@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
-import { signIn, signUp } from '@/lib/auth-client'
+import { signIn, signUp, useSession } from '@/lib/auth-client'
 
 export function AuthForm({ mode }: { mode: 'sign-in' | 'sign-up' }) {
 const router = useRouter()
+const {data: session} = useSession()
 const [error, setError] = useState('')
 const [loading, setLoading] = useState(false)
 
@@ -37,8 +38,26 @@ if (result.error) {
   return
 }
 
-router.push('/')
-router.refresh()
+if (mode === 'sign-up') {
+  router.push('/')
+  router.refresh()
+  return
+}
+
+try {
+  const response = await fetch('/api/auth/redirect')
+
+  if (!response.ok) {
+    throw new Error('Unable to determine account role')
+  }
+
+  const data = await response.json()
+
+  router.push(data.destination)
+  router.refresh()
+} catch {
+  setError('Unable to determine account type')
+}
 
 }
 

@@ -46,7 +46,7 @@ productId: number,
 ) {
 if (!file.type.startsWith('image/')) {
 throw new Error(
-"Invalid image file: ${file.name}",
+`Invalid image file: ${file.name}`,
 )
 }
 
@@ -54,7 +54,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024
 
 if (file.size > MAX_FILE_SIZE) {
 throw new Error(
-"${file.name} is larger than 5MB",
+`${file.name} is larger than 5MB`,
 )
 }
 
@@ -69,7 +69,7 @@ publicId: string
 const uploadStream =
 cloudinary.uploader.upload_stream(
 {
-folder: "fabulous-beddings/products/${productId}",
+folder: `fabulous-beddings/products/${productId}`,
 resource_type: 'image',
 },
 (error, result) => {
@@ -201,9 +201,29 @@ const images = await db
   )
   .orderBy(productImages.sortOrder)
 
+
+  const variants =
+  await db
+    .select({
+      id: productVariants.id,
+      productId: productVariants.productId,
+      name: productVariants.name,
+      price: productVariants.price,
+      stock: productVariants.stock,
+      active: productVariants.active,
+    })
+    .from(productVariants)
+    .where(
+      eq(
+        productVariants.productId,
+        productId,
+      ),
+    )
+
 return NextResponse.json({
   ...product,
   images,
+  variants,
 })
 
 } catch (error) {
@@ -860,7 +880,7 @@ const images = await db
   )
   .orderBy(productImages.sortOrder)
 
-const variants =
+const savedVariants =
   await db
     .select({
       id: productVariants.id,
@@ -884,7 +904,7 @@ const variants =
 return NextResponse.json({
   ...updatedProduct,
   images,
-  variants,
+  variants: savedVariants,
 })
 
 } catch (error) {

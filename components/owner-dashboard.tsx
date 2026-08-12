@@ -37,6 +37,8 @@ featured: boolean
 variants: ProductVariant[]
 }
 
+
+
 type ProductFormProps = {
 categories: ProductCategory[]
 product?: EditableProduct | null
@@ -181,6 +183,7 @@ useEffect(() => {
     setCompareAtPrice('')
     setStock('')
     setStatus('published')
+    setVariants([])
     setExistingImages([])
     setRemovedImageIds([])
     setPrimaryImageId(null)
@@ -227,6 +230,42 @@ useEffect(() => {
       }
 
       setExistingImages(data.images ?? [])
+
+      const loadedVariants =
+  (data.variants ?? []).map(
+    (variant: {
+      id: number
+      productId: number
+      name: string
+      price: number
+      stock: number
+      active: boolean
+    }) => {
+      const separator =
+        variant.name.indexOf(' — ')
+
+      return {
+        id: variant.id,
+        size:
+          separator === -1
+            ? variant.name
+            : variant.name.slice(
+                0,
+                separator,
+              ),
+        color:
+          separator === -1
+            ? ''
+            : variant.name.slice(
+                separator + 3,
+              ),
+        price: String(variant.price),
+        stock: String(variant.stock),
+      }
+    },
+  )
+
+setVariants(loadedVariants)
     } catch (error) {
       console.error(
         'Failed to load product images:',
@@ -508,7 +547,7 @@ setStock('')
 setStatus('published')
 
 const parsedVariants =
-  (product.variants ?? []).map(
+  (product?.variants ?? []).map(
     (variant: ProductVariant) => {
       const parts =
         variant.name.split(' — ')
@@ -730,6 +769,8 @@ Product name
       placeholder="Cloud Nine Percale Set"
     />
   </label>
+
+
 
 <div className="flex flex-col gap-3 text-sm">
   <label className="flex flex-col gap-2">
