@@ -1,7 +1,30 @@
-'use client'
+import {
+  CategorySection,
+  EditorialSection,
+  FeaturedProducts,
+  Hero,
+  NewsletterSection,
+  TestimonialSection,
+  StorefrontShell,
+} from '@/components/storefront'
+import { getFeaturedProducts } from '@/lib/store-data'
 
-import { CategorySection, EditorialSection, FeaturedProducts, Hero, NewsletterSection, TestimonialSection, StorefrontShell } from '@/components/storefront'
+export default async function Page() {
+  const featuredProducts = await getFeaturedProducts()
 
-export default function Page() {
-  return <StorefrontShell><Hero /><CategorySection /><FeaturedProducts /><EditorialSection /><TestimonialSection /><NewsletterSection /></StorefrontShell>
+  return (
+    <StorefrontShell>
+      <Hero />
+
+      <CategorySection />
+
+      <FeaturedProducts products={featuredProducts} />
+
+      <EditorialSection />
+
+      <TestimonialSection />
+
+      <NewsletterSection />
+    </StorefrontShell>
+  )
 }
