@@ -138,77 +138,79 @@ useState('')
 const [status, setStatus] =
 useState('published')
 
+
+
 useEffect(() => {
-if (!product) {
-setName('')
-setCategory('')
-setDescription('')
-setPrice('')
-setCompareAtPrice('')
-setStock('')
-setStatus('published')
-setExistingImages([])
-setRemovedImageIds([])
-setPrimaryImageId(null)
-setPrimaryNewImageIndex(null)
-setSelectedFiles([])
-setMessage('')
-return
-}
-
-setName(product.name)
-setCategory(product.category ?? '')
-setDescription(product.description)
-setPrice(String(product.price))
-setCompareAtPrice(
-  product.compareAtPrice === null
-    ? ''
-    : String(product.compareAtPrice),
-)
-setStock(String(product.stock))
-setStatus(product.status)
-setRemovedImageIds([])
-setPrimaryImageId(null)
-setPrimaryNewImageIndex(null)
-setSelectedFiles([])
-setMessage('')
-
-async function loadImages() {
-  try {
-    const response = await fetch(
-      `/api/owner/products/${product.id}`,
-      {
-        cache: 'no-store',
-      },
-    )
-
-    const data = await response.json()
-
-    if (!response.ok) {
-      throw new Error(
-        data.error ??
-          'Failed to load product images',
-      )
-    }
-
-    setExistingImages(
-      data.images ?? [],
-    )
-  } catch (error) {
-    console.error(
-      'Failed to load product images:',
-      error,
-    )
-
-    setMessage(
-      'Failed to load product images.',
-    )
+  if (!product) {
+    setName('')
+    setCategory('')
+    setDescription('')
+    setPrice('')
+    setCompareAtPrice('')
+    setStock('')
+    setStatus('published')
+    setExistingImages([])
+    setRemovedImageIds([])
+    setPrimaryImageId(null)
+    setPrimaryNewImageIndex(null)
+    setSelectedFiles([])
+    setMessage('')
+    return
   }
-}
 
-loadImages()
+  const currentProduct = product
 
+  setName(currentProduct.name)
+  setCategory(currentProduct.category ?? '')
+  setDescription(currentProduct.description)
+  setPrice(String(currentProduct.price))
+  setCompareAtPrice(
+    currentProduct.compareAtPrice === null
+      ? ''
+      : String(currentProduct.compareAtPrice),
+  )
+  setStock(String(currentProduct.stock))
+  setStatus(currentProduct.status)
+  setRemovedImageIds([])
+  setPrimaryImageId(null)
+  setPrimaryNewImageIndex(null)
+  setSelectedFiles([])
+  setMessage('')
+
+  async function loadImages() {
+    try {
+      const response = await fetch(
+        `/api/owner/products/${currentProduct.id}`,
+        {
+          cache: 'no-store',
+        },
+      )
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ?? 'Failed to load product images',
+        )
+      }
+
+      setExistingImages(data.images ?? [])
+    } catch (error) {
+      console.error(
+        'Failed to load product images:',
+        error,
+      )
+
+      setMessage('Failed to load product images.')
+    }
+  }
+
+  loadImages()
 }, [product])
+
+
+
+
 
 function handleFiles(
 event: React.ChangeEvent<HTMLInputElement>,
@@ -345,6 +347,7 @@ if (!product) {
     )
     return
   }
+
 
   setSaving(true)
   setMessage('')
