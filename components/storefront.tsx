@@ -27,6 +27,9 @@ import {
   ArrowRight,
   ChevronDown,
   Check,
+  Mail,
+  Phone,
+  MapPin,
 } from 'lucide-react'
 
 import {
@@ -47,8 +50,26 @@ import {
 type StorefrontData = {
   products: Product[]
   categories: StorefrontCategory[]
-}
 
+  cart: CartItem[]
+
+  addToCart: (
+    productId: string,
+    size?: string,
+    color?: string,
+  ) => void
+
+  updateQuantity: (
+    index: number,
+    quantity: number,
+  ) => void
+
+  removeFromCart: (
+    index: number,
+  ) => void
+
+  clearCart: () => void
+}
 const StorefrontDataContext =
   createContext<StorefrontData | null>(
     null,
@@ -264,8 +285,12 @@ export function StorefrontShell({
 
   return (
     <StorefrontDataContext.Provider
-      value={{products,
-        categories,
+      value={{
+        products,
+        categories, 
+        cart, 
+        addToCart,
+        updateQuantity,
       }}
     >
       <div className="min-h-screen bg-background text-foreground">
@@ -1367,10 +1392,11 @@ export function ProductPage({
 }
 
 export function CartPage() {
+  
   const {
     cart,
     products,
-    updateCartQuantity,
+    updateQuantity,
     removeFromCart,
   } = useStorefrontData()
 
@@ -1507,7 +1533,7 @@ export function CartPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              updateCartQuantity(
+                              updateQuantity(
                                 index,
                                 quantity -
                                   1,
@@ -1528,7 +1554,7 @@ export function CartPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              updateCartQuantity(
+                              updateQuantity(
                                 index,
                                 quantity +
                                   1,

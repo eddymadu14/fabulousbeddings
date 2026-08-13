@@ -1,5 +1,28 @@
-import { CheckoutPage, StorefrontShell } from '@/components/storefront'
+import {
+  getPublishedCategories,
+  getPublishedProducts,
+} from '@/lib/storefront'
 
-export default function Page() {
-  return <StorefrontShell><CheckoutPage /></StorefrontShell>
+import {
+  CheckoutPage,
+  StorefrontShell,
+} from '@/components/storefront'
+
+export default async function Page() {
+  const [
+    products,
+    categories,
+  ] = await Promise.all([
+    getPublishedProducts(),
+    getPublishedCategories(),
+  ])
+
+  return (
+    <StorefrontShell
+      products={products}
+      categories={categories}
+    >
+      <CheckoutPage />
+    </StorefrontShell>
+  )
 }
