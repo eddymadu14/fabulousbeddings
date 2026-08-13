@@ -13,6 +13,7 @@ import {
   useMemo,
   useState,
   useEffect,
+  Suspense
 } from 'react'
 
 import {
@@ -587,7 +588,7 @@ export function NewsletterSection() {
   return <section className="bg-accent px-5 py-16 text-accent-foreground lg:px-10"><div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-8 md:flex-row md:items-center"><div><p className="font-mono text-[10px] uppercase tracking-[0.24em]">A note from us</p><h2 className="mt-3 font-serif text-3xl sm:text-4xl">Make room for beautiful things.</h2></div><form className="flex w-full max-w-md border-b border-accent-foreground/50 pb-3" onSubmit={(event) => event.preventDefault()}><input type="email" required aria-label="Your email address" placeholder="Your email address" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-accent-foreground/60" /><button aria-label="Subscribe"><ArrowRight className="size-5" /></button></form></div></section>
 }
 
-export function ShopPage({
+export function ShopPageContent({
   onAdd,
 }: {
   onAdd?: (id: string) => void
@@ -909,7 +910,13 @@ export function ShopPage({
   )
 }
 
-
+export function ShopPage() {
+  return (
+    <Suspense fallback={null}>
+      <ShopPageContent />
+    </Suspense>
+  )
+}
 
 
 
