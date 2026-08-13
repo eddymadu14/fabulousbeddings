@@ -6,7 +6,15 @@ import {
   productVariants,
   products,
 } from '@/lib/db/schema'
-import type { Product } from '@/lib/store-data'
+import type { Product, Category } from '@/lib/store-data'
+
+import {
+  categories as categoriesTable,
+  products as productsTable,
+} from '@/lib/db/schema'
+
+
+
 
 type PublishedProductRow = {
   product: typeof products.$inferSelect
@@ -209,8 +217,7 @@ function normalizeProduct(
 
     name: product.name,
 
-    category: category?.name ?? 'Accessories',
-
+category: category?.name ?? 'Uncategorized',
     price: displayPrice,
 
     compareAt:
@@ -280,9 +287,9 @@ async function getPublishedProductRows(): Promise<
     )
 }
 
-export async function getPublishedProducts(): Promise<Product[]> {
-  const rows = await getPublishedProductRows()
-
+function normalizeProductRows(
+  rows: PublishedProductRow[],
+): Product[] {
   const productMap = new Map<
     number,
     {
@@ -337,6 +344,52 @@ export async function getPublishedProducts(): Promise<Product[]> {
         variants,
       ),
   )
+}
+
+export async function getPublishedProducts(): Promise<Product[]> {
+  const rows = await getPublishedProductRows()
+
+  return normalizeProductRows(rows)
+}
+
+export async function getPublishedProductsByCategory(
+  categoryId: number,
+): Promise<Product[]> {
+  const rows = await db
+    .select({
+      product: products,
+      category: categories,
+      image: productImages,
+      variant: productVariants,
+    })
+    .from(products)
+    .innerJoin(
+      categories,
+      eq(products.categoryId, categories.id),
+    )
+    .leftJoin(
+      productImages,
+      eq(products.id, productImages.productId),
+    )
+    .leftJoin(
+      productVariants,
+      and(
+        eq(products.id, productVariants.productId),
+        eq(productVariants.active, true),
+      ),
+    )
+    .where(
+      and(
+        eq(products.status, 'published'),
+        eq(products.categoryId, categoryId),
+      ),
+    )
+    .orderBy(
+      asc(productImages.sortOrder),
+      asc(productVariants.id),
+    )
+
+  return normalizeProductRows(rows)
 }
 
 export async function getPublishedProduct(
@@ -423,4 +476,45 @@ export async function getFeaturedProducts(): Promise<Product[]> {
   const products = await getPublishedProducts()
 
   return products.filter((product) => product.featured)
+}
+
+
+// ============================================================
+// DATABASE-BACKED STOREFRONT PRODUCTS
+// ============================================================
+
+export type StorefrontProductVariant = {
+  id: number
+  name: string
+  price: number
+  stock: number
+  active: boolean
+}
+
+export type StorefrontProduct = {
+  id: number
+  name: string
+  slug: string
+  description: string
+  price: number
+  compareAtPrice: number | null
+  image: string
+  stock: number
+  status: string
+  featured: boolean
+
+  category: {
+    id: number
+    name: string
+    slug: string
+  } | null
+
+  images: {
+    id: number
+    url: string
+    publicId: string | null
+    sortOrder: number
+  }[]
+
+  variants: StorefrontProductVariant[]
 }
