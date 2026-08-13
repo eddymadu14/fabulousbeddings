@@ -1,7 +1,45 @@
-'use client'
+import {
+  getPublishedCategories,
+  getPublishedProducts,
+} from '@/lib/storefront'
 
-import { CategorySection, EditorialSection, FeaturedProducts, Hero, NewsletterSection, TestimonialSection, StorefrontShell } from '@/components/storefront'
+import {
+  StorefrontShell,
+  Hero,
+  CategorySection,
+  FeaturedProducts,
+  EditorialSection,
+  TestimonialSection,
+  NewsletterSection,
+} from '@/components/storefront'
 
-export default function Page() {
-  return <StorefrontShell><Hero /><CategorySection /><FeaturedProducts /><EditorialSection /><TestimonialSection /><NewsletterSection /></StorefrontShell>
+
+
+export default async function Page() {
+  const [
+    products,
+    categories,
+  ] = await Promise.all([
+    getPublishedProducts(),
+    getPublishedCategories(),
+  ])
+
+  return (
+    <StorefrontShell
+      products={products}
+      categories={categories}
+    >
+      <Hero />
+
+      <CategorySection />
+
+      <FeaturedProducts />
+
+      <EditorialSection />
+
+      <TestimonialSection />
+
+      <NewsletterSection />
+    </StorefrontShell>
+  )
 }

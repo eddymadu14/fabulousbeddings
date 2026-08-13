@@ -1,20 +1,18 @@
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, count } from 'drizzle-orm'
+
 import { db } from '@/lib/db'
+
 import {
   categories,
   productImages,
   productVariants,
   products,
 } from '@/lib/db/schema'
-import type { Product, Category } from '@/lib/store-data'
 
-import {
-  categories as categoriesTable,
-  products as productsTable,
-} from '@/lib/db/schema'
-
-
-
+import type {
+  Product,
+  StorefrontCategory,
+} from '@/lib/store-data'
 
 type PublishedProductRow = {
   product: typeof products.$inferSelect
@@ -23,14 +21,13 @@ type PublishedProductRow = {
   variant: typeof productVariants.$inferSelect | null
 }
 
-/**
- * Creates a deterministic pseudo-random number from a product id.
- *
- * This means the same product keeps the same rating/review values
- * between renders instead of changing every time the page loads.
- */
+/* ============================================================
+   DISPLAY HELPERS
+   ============================================================ */
+
 function seededNumber(seed: number): number {
-  const value = Math.sin(seed * 12.9898) * 43758.5453
+  const value =
+    Math.sin(seed * 12.9898) * 43758.5453
 
   return value - Math.floor(value)
 }
@@ -38,7 +35,9 @@ function seededNumber(seed: number): number {
 function getProductRating(productId: number): number {
   const random = seededNumber(productId)
 
-  return Number((4.3 + random * 0.7).toFixed(1))
+  return Number(
+    (4.3 + random * 0.7).toFixed(1),
+  )
 }
 
 function getProductReviews(productId: number): number {
@@ -47,13 +46,20 @@ function getProductReviews(productId: number): number {
   return Math.floor(40 + random * 41)
 }
 
-/**
- * Recognized storefront colours.
+/*
+ * IMPORTANT:
  *
- * The database currently stores variant names as free-form text,
- * so we inspect the variant name and identify colour names when
- * possible.
+ * These ratings/reviews are currently generated because your
+ * database does not yet have product reviews/rating fields.
+ *
+ * When reviews are implemented, replace these functions with
+ * actual database values.
  */
+
+/* ============================================================
+   COLOUR HANDLING
+   ============================================================ */
+
 const COLOR_MAP: Record<string, string> = {
   black: '#000000',
   white: '#FFFFFF',
@@ -64,31 +70,40 @@ const COLOR_MAP: Record<string, string> = {
   chocolate: '#7B3F00',
   tan: '#D2B48C',
   nude: '#E3BC9A',
+
   pink: '#FFC0CB',
   blush: '#DE5D83',
   rose: '#FF007F',
+
   red: '#FF0000',
   burgundy: '#800020',
   maroon: '#800000',
+
   orange: '#FFA500',
   peach: '#FFE5B4',
   yellow: '#FFFF00',
   gold: '#D4AF37',
+
   green: '#008000',
   olive: '#808000',
   mint: '#98FF98',
+
   blue: '#0000FF',
   navy: '#000080',
   sky: '#87CEEB',
+
   teal: '#008080',
   turquoise: '#40E0D0',
+
   purple: '#800080',
   violet: '#8F00FF',
   lavender: '#E6E6FA',
+
   grey: '#808080',
   gray: '#808080',
   silver: '#C0C0C0',
   charcoal: '#36454F',
+
   creamwhite: '#FFFDD0',
 }
 
@@ -106,19 +121,21 @@ function getColourFromVariantName(
   name: string
   value: string
 } | null {
-  const normalized = normalizeColourName(variantName)
+  const normalized =
+    normalizeColourName(variantName)
 
-  /*
-   * Check longer colour names first.
-   * This prevents "cream" from being selected before
-   * something like "cream white".
-   */
-  const colourEntries = Object.entries(COLOR_MAP).sort(
+  const colourEntries = Object.entries(
+    COLOR_MAP,
+  ).sort(
     ([a], [b]) => b.length - a.length,
   )
 
-  for (const [colourName, colourValue] of colourEntries) {
-    const normalizedColour = normalizeColourName(colourName)
+  for (const [
+    colourName,
+    colourValue,
+  ] of colourEntries) {
+    const normalizedColour =
+      normalizeColourName(colourName)
 
     if (
       normalized === normalizedColour ||
@@ -137,25 +154,26 @@ function getColourFromVariantName(
 function getVariantSizes(
   variants: typeof productVariants.$inferSelect[],
 ): string[] {
-  const sizeVariants: string[] = []
+  const sizes: string[] = []
 
   for (const variant of variants) {
-    const colour = getColourFromVariantName(variant.name)
+    const colour =
+      getColourFromVariantName(variant.name)
 
     /*
-     * If the entire variant is a recognized colour, don't also
-     * display it as a size.
+     * If this variant is actually a colour,
+     * don't treat it as a size.
      */
     if (colour) {
       continue
     }
 
-    if (!sizeVariants.includes(variant.name)) {
-      sizeVariants.push(variant.name)
+    if (!sizes.includes(variant.name)) {
+      sizes.push(variant.name)
     }
   }
 
-  return sizeVariants
+  return sizes
 }
 
 function getVariantColours(
@@ -164,22 +182,15 @@ function getVariantColours(
   const colours: string[] = []
 
   for (const variant of variants) {
-    const colour = getColourFromVariantName(variant.name)
+    const colour =
+      getColourFromVariantName(variant.name)
 
     if (!colour) {
       continue
     }
 
-    /*
-     * The existing Product interface expects colour strings.
-     *
-     * We store:
-     *   colour name + colour grade
-     *
-     * Example:
-     *   "black:#000000"
-     */
-    const value = `${colour.name}:${colour.value}`
+    const value =
+      `${colour.name}:${colour.value}`
 
     if (!colours.includes(value)) {
       colours.push(value)
@@ -189,23 +200,31 @@ function getVariantColours(
   return colours
 }
 
+/* ============================================================
+   PRODUCT NORMALIZATION
+   ============================================================ */
+
 function normalizeProduct(
   product: typeof products.$inferSelect,
   category: typeof categories.$inferSelect | null,
   images: typeof productImages.$inferSelect[],
   variants: typeof productVariants.$inferSelect[],
 ): Product {
-  const activeVariants = variants.filter(
-    (variant) => variant.active,
-  )
+  const activeVariants =
+    variants.filter(
+      (variant) => variant.active,
+    )
 
-  const sortedImages = [...images].sort(
-    (a, b) => a.sortOrder - b.sortOrder,
-  )
+  const sortedImages =
+    [...images].sort(
+      (a, b) =>
+        a.sortOrder - b.sortOrder,
+    )
 
-  const variantPrices = activeVariants.map(
-    (variant) => variant.price,
-  )
+  const variantPrices =
+    activeVariants.map(
+      (variant) => variant.price,
+    )
 
   const displayPrice =
     variantPrices.length > 0
@@ -217,41 +236,55 @@ function normalizeProduct(
 
     name: product.name,
 
-category: category?.name ?? 'Uncategorized',
+    category:
+      category?.name ?? 'Uncategorized',
+
     price: displayPrice,
 
     compareAt:
-      product.compareAtPrice !== null
-        ? product.compareAtPrice
-        : undefined,
+      product.compareAtPrice ??
+      undefined,
 
     image:
       sortedImages[0]?.url ??
       product.image,
 
+    rating:
+      getProductRating(product.id),
+
+    reviews:
+      getProductReviews(product.id),
+
+    description:
+      product.description,
+
+    sizes:
+      getVariantSizes(activeVariants),
+
+    colors:
+      getVariantColours(activeVariants),
+
     /*
-     * Demo/display ratings requested for the storefront.
-     *
-     * They are deterministic per product, so they won't jump
-     * around every time the page renders.
+     * Your database currently doesn't contain
+     * a material column.
      */
-    rating: getProductRating(product.id),
-
-    reviews: getProductReviews(product.id),
-
-    description: product.description,
-
-    sizes: getVariantSizes(activeVariants),
-
-    colors: getVariantColours(activeVariants),
-
     material: 'Premium bedding',
 
-    featured: product.featured,
+    featured:
+      product.featured,
 
+    /*
+     * Badge is currently not stored in the database.
+     *
+     * We intentionally do not invent one.
+     */
     badge: undefined,
   }
 }
+
+/* ============================================================
+   PRODUCT ROW QUERY
+   ============================================================ */
 
 async function getPublishedProductRows(): Promise<
   PublishedProductRow[]
@@ -263,29 +296,56 @@ async function getPublishedProductRows(): Promise<
       image: productImages,
       variant: productVariants,
     })
+
     .from(products)
+
     .leftJoin(
       categories,
-      eq(products.categoryId, categories.id),
+      eq(
+        products.categoryId,
+        categories.id,
+      ),
     )
+
     .leftJoin(
       productImages,
-      eq(products.id, productImages.productId),
+      eq(
+        products.id,
+        productImages.productId,
+      ),
     )
+
     .leftJoin(
       productVariants,
       and(
-        eq(products.id, productVariants.productId),
-        eq(productVariants.active, true),
+        eq(
+          products.id,
+          productVariants.productId,
+        ),
+        eq(
+          productVariants.active,
+          true,
+        ),
       ),
     )
-    .where(eq(products.status, 'published'))
+
+    .where(
+      eq(
+        products.status,
+        'published',
+      ),
+    )
+
     .orderBy(
       asc(products.id),
       asc(productImages.sortOrder),
       asc(productVariants.id),
     )
 }
+
+/* ============================================================
+   NORMALIZE MULTIPLE PRODUCT ROWS
+   ============================================================ */
 
 function normalizeProductRows(
   rows: PublishedProductRow[],
@@ -294,49 +354,76 @@ function normalizeProductRows(
     number,
     {
       product: typeof products.$inferSelect
-      category: typeof categories.$inferSelect | null
-      images: typeof productImages.$inferSelect[]
-      variants: typeof productVariants.$inferSelect[]
+      category:
+        | typeof categories.$inferSelect
+        | null
+      images:
+        typeof productImages.$inferSelect[]
+      variants:
+        typeof productVariants.$inferSelect[]
     }
   >()
 
   for (const row of rows) {
-    const productId = row.product.id
+    const productId =
+      row.product.id
 
-    let entry = productMap.get(productId)
+    let entry =
+      productMap.get(productId)
 
     if (!entry) {
       entry = {
         product: row.product,
-        category: row.category,
+
+        category:
+          row.category,
+
         images: [],
+
         variants: [],
       }
 
-      productMap.set(productId, entry)
+      productMap.set(
+        productId,
+        entry,
+      )
     }
 
     if (
       row.image &&
       !entry.images.some(
-        (image) => image.id === row.image!.id,
+        (image) =>
+          image.id === row.image!.id,
       )
     ) {
-      entry.images.push(row.image)
+      entry.images.push(
+        row.image,
+      )
     }
 
     if (
       row.variant &&
       !entry.variants.some(
-        (variant) => variant.id === row.variant!.id,
+        (variant) =>
+          variant.id ===
+          row.variant!.id,
       )
     ) {
-      entry.variants.push(row.variant)
+      entry.variants.push(
+        row.variant,
+      )
     }
   }
 
-  return Array.from(productMap.values()).map(
-    ({ product, category, images, variants }) =>
+  return Array.from(
+    productMap.values(),
+  ).map(
+    ({
+      product,
+      category,
+      images,
+      variants,
+    }) =>
       normalizeProduct(
         product,
         category,
@@ -346,10 +433,25 @@ function normalizeProductRows(
   )
 }
 
+/* ============================================================
+   PUBLIC PRODUCT FUNCTIONS
+   ============================================================ */
+
 export async function getPublishedProducts(): Promise<Product[]> {
-  const rows = await getPublishedProductRows()
+  const rows =
+    await getPublishedProductRows()
 
   return normalizeProductRows(rows)
+}
+
+export async function getFeaturedProducts(): Promise<Product[]> {
+  const products =
+    await getPublishedProducts()
+
+  return products.filter(
+    (product) =>
+      product.featured,
+  )
 }
 
 export async function getPublishedProductsByCategory(
@@ -362,28 +464,52 @@ export async function getPublishedProductsByCategory(
       image: productImages,
       variant: productVariants,
     })
+
     .from(products)
+
     .innerJoin(
       categories,
-      eq(products.categoryId, categories.id),
+      eq(
+        products.categoryId,
+        categories.id,
+      ),
     )
+
     .leftJoin(
       productImages,
-      eq(products.id, productImages.productId),
+      eq(
+        products.id,
+        productImages.productId,
+      ),
     )
+
     .leftJoin(
       productVariants,
       and(
-        eq(products.id, productVariants.productId),
-        eq(productVariants.active, true),
+        eq(
+          products.id,
+          productVariants.productId,
+        ),
+        eq(
+          productVariants.active,
+          true,
+        ),
       ),
     )
+
     .where(
       and(
-        eq(products.status, 'published'),
-        eq(products.categoryId, categoryId),
+        eq(
+          products.status,
+          'published',
+        ),
+        eq(
+          products.categoryId,
+          categoryId,
+        ),
       ),
     )
+
     .orderBy(
       asc(productImages.sortOrder),
       asc(productVariants.id),
@@ -395,9 +521,14 @@ export async function getPublishedProductsByCategory(
 export async function getPublishedProduct(
   id: string,
 ): Promise<Product | null> {
-  const numericId = Number(id)
+  const numericId =
+    Number(id)
 
-  if (!Number.isInteger(numericId)) {
+  if (
+    !Number.isInteger(
+      numericId,
+    )
+  ) {
     return null
   }
 
@@ -408,28 +539,52 @@ export async function getPublishedProduct(
       image: productImages,
       variant: productVariants,
     })
+
     .from(products)
+
     .leftJoin(
       categories,
-      eq(products.categoryId, categories.id),
+      eq(
+        products.categoryId,
+        categories.id,
+      ),
     )
+
     .leftJoin(
       productImages,
-      eq(products.id, productImages.productId),
+      eq(
+        products.id,
+        productImages.productId,
+      ),
     )
+
     .leftJoin(
       productVariants,
       and(
-        eq(products.id, productVariants.productId),
-        eq(productVariants.active, true),
+        eq(
+          products.id,
+          productVariants.productId,
+        ),
+        eq(
+          productVariants.active,
+          true,
+        ),
       ),
     )
+
     .where(
       and(
-        eq(products.id, numericId),
-        eq(products.status, 'published'),
+        eq(
+          products.id,
+          numericId,
+        ),
+        eq(
+          products.status,
+          'published',
+        ),
       ),
     )
+
     .orderBy(
       asc(productImages.sortOrder),
       asc(productVariants.id),
@@ -441,26 +596,39 @@ export async function getPublishedProduct(
 
   const first = rows[0]
 
-  const images: typeof productImages.$inferSelect[] = []
-  const variants: typeof productVariants.$inferSelect[] = []
+  const images:
+    typeof productImages.$inferSelect[] =
+    []
+
+  const variants:
+    typeof productVariants.$inferSelect[] =
+    []
 
   for (const row of rows) {
     if (
       row.image &&
       !images.some(
-        (image) => image.id === row.image!.id,
+        (image) =>
+          image.id ===
+          row.image!.id,
       )
     ) {
-      images.push(row.image)
+      images.push(
+        row.image,
+      )
     }
 
     if (
       row.variant &&
       !variants.some(
-        (variant) => variant.id === row.variant!.id,
+        (variant) =>
+          variant.id ===
+          row.variant!.id,
       )
     ) {
-      variants.push(row.variant)
+      variants.push(
+        row.variant,
+      )
     }
   }
 
@@ -472,49 +640,73 @@ export async function getPublishedProduct(
   )
 }
 
-export async function getFeaturedProducts(): Promise<Product[]> {
-  const products = await getPublishedProducts()
+/* ============================================================
+   CATEGORIES
+   ============================================================ */
 
-  return products.filter((product) => product.featured)
-}
+export async function getPublishedCategories(): Promise<
+  StorefrontCategory[]
+> {
+  const rows = await db
+    .select({
+      category: categories,
+      productCount: count(
+        products.id,
+      ),
+    })
 
+    .from(categories)
 
-// ============================================================
-// DATABASE-BACKED STOREFRONT PRODUCTS
-// ============================================================
+    .leftJoin(
+      products,
+      and(
+        eq(
+          products.categoryId,
+          categories.id,
+        ),
+        eq(
+          products.status,
+          'published',
+        ),
+      ),
+    )
 
-export type StorefrontProductVariant = {
-  id: number
-  name: string
-  price: number
-  stock: number
-  active: boolean
-}
+    .where(
+      eq(
+        categories.active,
+        true,
+      ),
+    )
 
-export type StorefrontProduct = {
-  id: number
-  name: string
-  slug: string
-  description: string
-  price: number
-  compareAtPrice: number | null
-  image: string
-  stock: number
-  status: string
-  featured: boolean
+    .groupBy(
+      categories.id,
+    )
 
-  category: {
-    id: number
-    name: string
-    slug: string
-  } | null
+    .orderBy(
+      asc(categories.id),
+    )
 
-  images: {
-    id: number
-    url: string
-    publicId: string | null
-    sortOrder: number
-  }[]
+  return rows.map(
+    ({
+      category,
+      productCount,
+    }) => ({
+      id: category.id,
 
-  variants: StorefrontProductVariant[]
+      name: category.name,
+
+      slug: category.slug,
+
+      image:
+        category.image ??
+        '/placeholder-category.jpg',
+
+      count:
+        `${productCount} ${
+          productCount === 1
+            ? 'piece'
+            : 'pieces'
+        }`,
+    }),
+  )
 }
