@@ -4,6 +4,7 @@ import Link from 'next/link'
 import {
   usePathname,
   useRouter,
+  useSearchParams,
 } from 'next/navigation'
 
 import {
@@ -11,6 +12,7 @@ import {
   useContext,
   useMemo,
   useState,
+  useEffect,
 } from 'react'
 
 import {
@@ -41,7 +43,6 @@ import {
   type Product,
   type StorefrontCategory,
 } from '@/lib/store-data'
-import { products } from '@/lib/db/schema'
 
 type StorefrontData = {
   products: Product[]
@@ -68,13 +69,28 @@ function useStorefrontData() {
   return context
 }
 
-
 const navItems = [
   { label: 'Shop', href: '/shop' },
-  { label: 'Bedding', href: '/shop?category=Bedding' },
-  { label: 'Pillows', href: '/shop?category=Pillows' },
-  { label: 'Duvets', href: '/shop?category=Duvets' },
-  { label: 'Our story', href: '/about' },
+
+  {
+    label: 'Bedding',
+    href: '/shop?category=bedsheets',
+  },
+
+  {
+    label: 'Pillows',
+    href: '/shop?category=pillows',
+  },
+
+  {
+    label: 'Duvets',
+    href: '/shop?category=duvets',
+  },
+
+  {
+    label: 'Our story',
+    href: '/about',
+  },
 ]
 
 export function StorefrontShell({
@@ -419,7 +435,7 @@ export function CategorySection() {
                 category.id
               }
               href={`/shop?category=${encodeURIComponent(
-                category.name,
+                category.slug
               )}`}
               className={`group relative aspect-[0.8] overflow-hidden bg-muted ${
                 index === 0
@@ -549,95 +565,155 @@ export function NewsletterSection() {
 export function ShopPage({
   onAdd,
 }: {
-  onAdd?: (
-    id: string,
-  ) => void
+  onAdd?: (id: string) => void
 }) {
   const {
     products,
     categories,
-  } =
-    useStorefrontData()
+  } = useStorefrontData()
+
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  const categoryFromUrl =
+    searchParams.get('category') ?? 'All'
 
   const [
     category,
     setCategory,
-  ] =
-    useState<
-      string | 'All'
-    >('All')
+  ] = useState<string>(
+    categoryFromUrl,
+  )
 
   const [
     sort,
     setSort,
-  ] =
-    useState(
-      'featured',
-    )
+  ] = useState('featured')
 
   const [
     mobileFilters,
     setMobileFilters,
-  ] =
-    useState(false)
+  ] = useState(false)
 
-  const filtered =
-    useMemo(() => {
-      const list =
-        category === 'All'
-          ? products
-          : products.filter(
-              (product) =>
-                product.category ===
-                category,
-            )
+  /*
+   * Keep the selected category synchronized
+   * with the URL.
+   */
+  useEffect(() => {
+    setCategory(categoryFromUrl)
+  }, [categoryFromUrl])
 
-      return [
-        ...list,
-      ].sort(
-        (a, b) => {
-          if (
-            sort === 'low'
-          ) {
-            return (
-              a.price -
-              b.price
-            )
-          }
+  /*
+   * Filter products by the category slug.
+   *
+   * Products returned by storefront.ts have
+   * category information attached to them.
+   *
+   * We resolve the selected category slug
+   * to its category name, then compare that
+   * against product.category.
+   */
+  const filteredProducts = useMemo(() => {
+    if (category === 'All') {
+      return products
+    }
 
-          if (
-            sort === 'high'
-          ) {
-            return (
-              b.price -
-              a.price
-            )
-          }
-
-          if (
-            sort ===
-            'featured'
-          ) {
-            return (
-              Number(
-                b.featured ??
-                  false,
-              ) -
-              Number(
-                a.featured ??
-                  false,
-              )
-            )
-          }
-
-          return 0
-        },
+    const selectedCategory =
+      categories.find(
+        (item) =>
+          item.slug === category,
       )
-    }, [
-      category,
-      products,
-      sort,
-    ])
+
+    if (!selectedCategory) {
+      return []
+    }
+
+    const filtered =
+      products.filter(
+        (product) =>
+          product.category ===
+          selectedCategory.name,
+      )
+
+    return [...filtered].sort(
+      (a, b) => {
+        if (sort === 'low') {
+          return a.price - b.price
+        }
+
+        if (sort === 'high') {
+          return b.price - a.price
+        }
+
+        if (sort === 'featured') {
+          return (
+            Number(b.featured) -
+            Number(a.featured)
+          )
+        }
+
+        return 0
+      },
+    )
+  }, [
+    category,
+    categories,
+    products,
+    sort,
+  ])
+
+  /*
+   * Sort the complete product list when
+   * "All" is selected.
+   */
+  const displayedProducts = useMemo(() => {
+    if (category !== 'All') {
+      return filteredProducts
+    }
+
+    return [...filteredProducts].sort(
+      (a, b) => {
+        if (sort === 'low') {
+          return a.price - b.price
+        }
+
+        if (sort === 'high') {
+          return b.price - a.price
+        }
+
+        if (sort === 'featured') {
+          return (
+            Number(b.featured) -
+            Number(a.featured)
+          )
+        }
+
+        return 0
+      },
+    )
+  }, [
+    category,
+    filteredProducts,
+    sort,
+  ])
+
+  const selectCategory = (
+    slug: string,
+  ) => {
+    setCategory(slug)
+
+    if (slug === 'All') {
+      router.push('/shop')
+    } else {
+      router.push(
+        `/shop?category=${encodeURIComponent(
+          slug,
+        )}`,
+      )
+    }
+
+    setMobileFilters(false)
+  }
 
   return (
     <div>
@@ -662,11 +738,14 @@ export function ShopPage({
       </section>
 
       <section className="mx-auto max-w-7xl px-5 py-10 lg:px-10">
+
+        {/* Header */}
         <div className="flex items-center justify-between border-b border-border pb-5">
           <button
+            type="button"
             onClick={() =>
               setMobileFilters(
-                !mobileFilters,
+                (current) => !current,
               )
             }
             className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.14em] md:hidden"
@@ -683,9 +762,8 @@ export function ShopPage({
           </button>
 
           <p className="hidden text-sm text-muted-foreground md:block">
-            {filtered.length}{' '}
-            {filtered.length ===
-            1
+            {displayedProducts.length}{' '}
+            {displayedProducts.length === 1
               ? 'piece'
               : 'pieces'}
           </p>
@@ -697,12 +775,9 @@ export function ShopPage({
 
             <select
               value={sort}
-              onChange={(
-                event,
-              ) =>
+              onChange={(event) =>
                 setSort(
-                  event.target
-                    .value,
+                  event.target.value,
                 )
               }
               aria-label="Sort products"
@@ -723,6 +798,7 @@ export function ShopPage({
           </div>
         </div>
 
+        {/* Categories */}
         <div
           className={`${
             mobileFilters
@@ -731,14 +807,12 @@ export function ShopPage({
           } flex-wrap gap-2 border-b border-border py-5 md:flex`}
         >
           <button
+            type="button"
             onClick={() =>
-              setCategory(
-                'All',
-              )
+              selectCategory('All')
             }
             className={`border px-4 py-2 text-xs uppercase tracking-[0.12em] ${
-              category ===
-              'All'
+              category === 'All'
                 ? 'border-primary bg-primary text-primary-foreground'
                 : 'border-border hover:border-primary'
             }`}
@@ -749,46 +823,62 @@ export function ShopPage({
           {categories.map(
             (item) => (
               <button
-                key={
-                  item.id
-                }
+                key={item.id}
+                type="button"
                 onClick={() =>
-                  setCategory(
-                    item.name,
+                  selectCategory(
+                    item.slug,
                   )
                 }
                 className={`border px-4 py-2 text-xs uppercase tracking-[0.12em] ${
                   category ===
-                  item.name
+                  item.slug
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border hover:border-primary'
                 }`}
               >
-                {
-                  item.name
-                }
+                {item.name}
               </button>
             ),
           )}
         </div>
 
-        <div className="mt-8 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map(
-            (product) => (
-              <ProductCard
-                key={
-                  product.id
-                }
-                product={
-                  product
-                }
-                onAdd={
-                  onAdd
-                }
-              />
-            ),
-          )}
-        </div>
+        {/* Products */}
+        {displayedProducts.length > 0 ? (
+          <div className="mt-8 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+            {displayedProducts.map(
+              (product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onAdd={onAdd}
+                />
+              ),
+            )}
+          </div>
+        ) : (
+          <div className="py-20 text-center">
+            <p className="font-serif text-3xl">
+              No products found
+            </p>
+
+            <p className="mt-3 text-sm text-muted-foreground">
+              There are currently no
+              published products in this
+              category.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                selectCategory('All')
+              }
+              className="mt-6 bg-primary px-5 py-3 text-xs uppercase tracking-[0.12em] text-primary-foreground"
+            >
+              View all products
+            </button>
+          </div>
+        )}
       </section>
     </div>
   )
