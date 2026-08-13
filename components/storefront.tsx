@@ -847,16 +847,125 @@ export function FeaturedProducts({
   )
 }
 
-export function ProductCard({ product, onAdd, wishlist, onWishlist }: { product: Product; onAdd?: (id: string) => void; wishlist?: boolean; onWishlist?: (id: string) => void }) {
-  return <article className="group">
-    <div className="relative aspect-[0.88] overflow-hidden bg-muted"><Link href={`/product/${product.id}`}><img src={product.image} alt={product.name} className="size-full object-cover transition-transform duration-700 group-hover:scale-105" /></Link>{product.badge && <span className="absolute left-3 top-3 bg-primary px-3 py-1.5 font-mono text-[9px] uppercase tracking-[0.12em] text-primary-foreground">{product.badge}</span>}{onWishlist && <button aria-label={wishlist ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`} onClick={() => onWishlist(product.id)} className="absolute right-3 top-3 rounded-full bg-background/90 p-2.5 transition-colors hover:bg-background"><Heart className={`size-4 ${wishlist ? 'fill-accent text-accent' : ''}`} /></button>}<button
-  type="button"
-  onClick={(event) => {
-    event.preventDefault()
-    event.stopPropagation()
-    onAdd?.(product.id)
-  }}
-  className="absolute inset-x-3 bottom-3 bg-background py-3 text-xs font-medium uppercase tracking-[0.12em] opacity-100 transition-all md:translate-y-14 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100">Quick add</button></div><Link href={`/product/${product.id}`} className="block"><div className="mt-4 flex items-start justify-between gap-3"><div><h3 className="text-sm font-medium">{product.name}</h3><div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Star className="size-3 fill-accent text-accent" /> {product.rating} <span>({product.reviews})</span></div></div><div className="text-right text-sm"><span>{formatPrice(product.price)}</span>{product.compareAt && <span className="ml-2 text-xs text-muted-foreground line-through">{formatPrice(product.compareAt)}</span>}</div></div></Link></article>
+export function ProductCard({
+  product,
+  onAdd,
+  wishlist,
+  onWishlist,
+}: {
+  product: Product
+  onAdd?: (id: string) => void
+  wishlist?: boolean
+  onWishlist?: (id: string) => void
+}) {
+  const {
+    addToCart,
+  } = useStorefrontData()
+
+  const handleQuickAdd = () => {
+    if (onAdd) {
+      onAdd(product.id)
+      return
+    }
+
+    addToCart(product.id)
+  }
+
+  return (
+    <article className="group">
+      <div className="relative overflow-hidden rounded-xl bg-muted">
+        <Link
+          href={`/product/${product.id}`}
+        >
+          <img
+            src={product.image}
+            alt={product.name}
+            className="aspect-[0.92] w-full object-cover transition-transform duration-700 group-hover:scale-105"
+          />
+        </Link>
+
+        {product.badge && (
+          <span className="absolute left-2.5 top-2.5 rounded-md bg-primary px-2.5 py-1 font-mono text-[8px] uppercase tracking-[0.12em] text-primary-foreground">
+            {product.badge}
+          </span>
+        )}
+
+        {onWishlist && (
+          <button
+            type="button"
+            aria-label={
+              wishlist
+                ? `Remove ${product.name} from wishlist`
+                : `Add ${product.name} to wishlist`
+            }
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              onWishlist(product.id)
+            }}
+            className="absolute right-2.5 top-2.5 rounded-full bg-background/90 p-2 transition-colors hover:bg-background"
+          >
+            <Heart
+              className={`size-3.5 ${
+                wishlist
+                  ? 'fill-accent text-accent'
+                  : ''
+              }`}
+            />
+          </button>
+        )}
+
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            handleQuickAdd()
+          }}
+          className="absolute inset-x-2.5 bottom-2.5 rounded-lg bg-background py-2.5 text-[10px] font-medium uppercase tracking-[0.12em] opacity-100 transition-all md:translate-y-12 md:opacity-0 md:group-hover:translate-y-0 md:group-hover:opacity-100"
+        >
+          Quick add
+        </button>
+      </div>
+
+      <Link
+        href={`/product/${product.id}`}
+        className="block"
+      >
+        <div className="mt-3 flex items-start justify-between gap-2">
+          <div>
+            <h3 className="text-[13px] font-medium">
+              {product.name}
+            </h3>
+
+            <div className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Star className="size-2.5 fill-accent text-accent" />
+              {product.rating}
+              <span>
+                ({product.reviews})
+              </span>
+            </div>
+          </div>
+
+          <div className="text-right text-[13px]">
+            <span>
+              {formatPrice(
+                product.price,
+              )}
+            </span>
+
+            {product.compareAt && (
+              <span className="ml-1.5 text-[10px] text-muted-foreground line-through">
+                {formatPrice(
+                  product.compareAt,
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+      </Link>
+    </article>
+  )
 }
 
 export function EditorialSection() {
@@ -1154,7 +1263,7 @@ export function ShopPageContent({
 
         {/* Products */}
         {displayedProducts.length > 0 ? (
-          <div className="mt-8 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+<div className="mt-7 grid grid-cols-2 gap-x-3 gap-y-8 sm:gap-x-4 lg:grid-cols-5 lg:gap-x-5">
             {displayedProducts.map(
               (product) => (
                 <ProductCard
@@ -1193,10 +1302,17 @@ export function ShopPageContent({
   )
 }
 
-export function ShopPage() {
+
+export function ShopPage({
+  onAdd,
+}: {
+  onAdd?: (id: string) => void
+}) {
   return (
     <Suspense fallback={null}>
-      <ShopPageContent />
+      <ShopPageContent
+        onAdd={onAdd}
+      />
     </Suspense>
   )
 }
