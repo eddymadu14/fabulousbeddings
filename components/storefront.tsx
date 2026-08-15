@@ -326,87 +326,130 @@ const addToCart = async (
 }
 
 
+
 const updateQuantity = async (
   productId: string,
   variantId: number | null,
   amount: number,
 ) => {
-  const item = cart.find(
-    (currentItem) =>
-      String(currentItem.productId) ===
+  const currentItem = cart.find(
+    (item) =>
+      String(item.productId) ===
         String(productId) &&
-      currentItem.variantId ===
-        variantId,
+      (
+        item.variantId == null
+          ? variantId == null
+          : Number(item.variantId) ===
+            Number(variantId)
+      ),
   )
 
-  if (!item) {
-    return
-  }
-
-  const quantity =
-    item.quantity + amount
-
-  const response =
-    await fetch('/api/cart', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type':
-          'application/json',
-      },
-      credentials: 'include',
-      body: JSON.stringify({
+  if (!currentItem) {
+    console.error(
+      'Cart item not found in local state',
+      {
         productId,
         variantId,
-        quantity,
-      }),
-    })
-
-  if (!response.ok) {
-    console.error(
-      'Failed to update cart quantity',
+        cart,
+      },
     )
+
     return
   }
 
-  const data =
-    await response.json()
+  const newQuantity =
+    currentItem.quantity + amount
 
-  setCart(
-    data.items ?? [],
-  )
+  try {
+    const response = await fetch(
+      '/api/cart',
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          productId:
+            String(productId),
+          variantId:
+            variantId == null
+              ? null
+              : Number(variantId),
+          quantity: newQuantity,
+        }),
+      },
+    )
+
+    const data =
+      await response.json()
+
+    if (!response.ok) {
+      console.error(
+        'Cart update failed',
+        data,
+      )
+      return
+    }
+
+    setCart(
+      data.items ?? [],
+    )
+  } catch (error) {
+    console.error(
+      'Failed to update cart quantity',
+      error,
+    )
+  }
 }
+
 
 const removeFromCart = async (
   productId: string,
   variantId: number | null,
 ) => {
-  const response =
-    await fetch('/api/cart', {
-      method: 'DELETE',
-      headers: {
-        'Content-Type':
-          'application/json',
+  try {
+    const response = await fetch(
+      '/api/cart',
+      {
+        method: 'DELETE',
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          productId:
+            String(productId),
+          variantId:
+            variantId == null
+              ? null
+              : Number(variantId),
+        }),
       },
-      credentials: 'include',
-      body: JSON.stringify({
-        productId,
-        variantId,
-      }),
-    })
+    )
 
-  if (!response.ok) {
+    const data =
+      await response.json()
+
+    if (!response.ok) {
+      console.error(
+        'Cart removal failed',
+        data,
+      )
+      return
+    }
+
+    setCart(
+      data.items ?? [],
+    )
+  } catch (error) {
     console.error(
       'Failed to remove cart item',
+      error,
     )
-    return
   }
-
-  const data =
-    await response.json()
-
-  setCart(
-    data.items ?? [],
-  )
 }
 
 const clearCart = async () => {
@@ -2293,7 +2336,7 @@ export function CartPage() {
 
                 return (
                   <div
-                    key={`${product.id}-${size}-${color}-${index}`}
+                    key={`${product.id}-${size}-${color}-${variantId ?? 'default' }`}
                     className="flex gap-5 border-b border-border pb-6"
                   >
                     {/* Product image */}
@@ -2777,16 +2820,16 @@ export function CheckoutPage() {
                   quantity,
                   size,
                   color,
-                },
-                index,
-              ) => {
+                  productId,
+                  variantId,
+                }) => {
                 if (!product) {
                   return null
                 }
 
                 return (
                   <div
-                    key={`${product.id}-${size}-${color}-${index}`}
+                    key={`${product.id}-${size}-${color}-${variantId ?? 'default'}`}
                     className="flex gap-4 border-b border-border pb-5"
                   >
                     <img

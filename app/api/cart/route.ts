@@ -259,36 +259,23 @@ items: serializeCartItems(items),
   }
 }
 
+
 export async function PATCH(
   request: Request,
 ) {
   try {
-    const body =
-      await request.json()
+    const body = await request.json()
 
-    const productId =
-      Number(body.productId)
-
-    const variantId =
-      body.variantId == null
-        ? null
-        : Number(body.variantId)
-
-    const quantity =
-      Number(body.quantity)
+    const itemId = Number(body.itemId)
+    const quantity = Number(body.quantity)
 
     if (
-      !Number.isInteger(
-        productId,
-      ) ||
-      !Number.isInteger(
-        quantity,
-      )
+      !Number.isInteger(itemId) ||
+      !Number.isInteger(quantity)
     ) {
       return NextResponse.json(
         {
-          error:
-            'Invalid cart update',
+          error: 'Invalid cart update',
         },
         {
           status: 400,
@@ -296,49 +283,25 @@ export async function PATCH(
       )
     }
 
-    const owner =
-      await getCartOwner()
+    const owner = await getCartOwner()
 
-    const cart =
-      await getOrCreateCart(
-        owner,
-      )
+    const cart = await getOrCreateCart(
+      owner,
+    )
 
-    const conditions = [
-      eq(
-        cartItems.cartId,
-        cart.id,
-      ),
-      eq(
-        cartItems.productId,
-        productId,
-      ),
-    ]
-
-    if (variantId === null) {
-      conditions.push(
-        eq(
-          cartItems.variantId,
-          null as never,
+    const existing = await db
+      .select()
+      .from(cartItems)
+      .where(
+        and(
+          eq(cartItems.id, itemId),
+          eq(
+            cartItems.cartId,
+            cart.id,
+          ),
         ),
       )
-    } else {
-      conditions.push(
-        eq(
-          cartItems.variantId,
-          variantId,
-        ),
-      )
-    }
-
-    const existing =
-      await db
-        .select()
-        .from(cartItems)
-        .where(
-          and(...conditions),
-        )
-        .limit(1)
+      .limit(1)
 
     if (!existing.length) {
       return NextResponse.json(
@@ -356,9 +319,15 @@ export async function PATCH(
       await db
         .delete(cartItems)
         .where(
-          eq(
-            cartItems.id,
-            existing[0].id,
+          and(
+            eq(
+              cartItems.id,
+              itemId,
+            ),
+            eq(
+              cartItems.cartId,
+              cart.id,
+            ),
           ),
         )
     } else {
@@ -366,33 +335,43 @@ export async function PATCH(
         .update(cartItems)
         .set({
           quantity,
-          updatedAt:
-            new Date(),
+          updatedAt: new Date(),
         })
         .where(
-          eq(
-            cartItems.id,
-            existing[0].id,
+          and(
+            eq(
+              cartItems.id,
+              itemId,
+            ),
+            eq(
+              cartItems.cartId,
+              cart.id,
+            ),
           ),
         )
     }
 
-    const items =
-      await db
-        .select()
-        .from(cartItems)
-        .where(
-          eq(
-            cartItems.cartId,
-            cart.id,
-          ),
-        )
+    const items = await db
+      .select()
+      .from(cartItems)
+      .where(
+        eq(
+          cartItems.cartId,
+          cart.id,
+        ),
+      )
 
     return NextResponse.json({
       cartId: cart.id,
-items: serializeCartItems(items),
+      items:
+        serializeCartItems(items),
     })
-  } catch {
+  } catch (error) {
+    console.error(
+      'Cart PATCH failed:',
+      error,
+    )
+
     return NextResponse.json(
       {
         error:
@@ -405,78 +384,95 @@ items: serializeCartItems(items),
   }
 }
 
+
 export async function DELETE(
   request: Request,
 ) {
   try {
-    const body =
-      await request.json()
+    const body = await request.json()
 
-    const productId =
-      Number(body.productId)
+    const itemId = Number(body.itemId)
 
-    const variantId =
-      body.variantId == null
-        ? null
-        : Number(body.variantId)
-
-    const owner =
-      await getCartOwner()
-
-    const cart =
-      await getOrCreateCart(
-        owner,
+    if (!Number.isInteger(itemId)) {
+      return NextResponse.json(
+        {
+          error:
+            'Invalid cart item',
+        },
+        {
+          status: 400,
+        },
       )
+    }
 
-    const conditions = [
-      eq(
-        cartItems.cartId,
-        cart.id,
-      ),
-      eq(
-        cartItems.productId,
-        productId,
-      ),
-    ]
+    const owner = await getCartOwner()
 
-    if (variantId === null) {
-      conditions.push(
-        eq(
-          cartItems.variantId,
-          null as never,
+    const cart = await getOrCreateCart(
+      owner,
+    )
+
+    const existing = await db
+      .select()
+      .from(cartItems)
+      .where(
+        and(
+          eq(cartItems.id, itemId),
+          eq(
+            cartItems.cartId,
+            cart.id,
+          ),
         ),
       )
-    } else {
-      conditions.push(
-        eq(
-          cartItems.variantId,
-          variantId,
-        ),
+      .limit(1)
+
+    if (!existing.length) {
+      return NextResponse.json(
+        {
+          error:
+            'Cart item not found',
+        },
+        {
+          status: 404,
+        },
       )
     }
 
     await db
       .delete(cartItems)
       .where(
-        and(...conditions),
-      )
-
-    const items =
-      await db
-        .select()
-        .from(cartItems)
-        .where(
+        and(
+          eq(
+            cartItems.id,
+            itemId,
+          ),
           eq(
             cartItems.cartId,
             cart.id,
           ),
-        )
+        ),
+      )
+
+    const items = await db
+      .select()
+      .from(cartItems)
+      .where(
+        eq(
+          cartItems.cartId,
+          cart.id,
+        ),
+      )
 
     return NextResponse.json({
       cartId: cart.id,
-items: serializeCartItems(items),
+      items:
+        serializeCartItems(items),
     })
-  } catch {
+  } catch (error) {
+    console.error(
+      'Cart DELETE failed:',
+      error,
+    )
+
     return NextResponse.json(
       {
         error:
