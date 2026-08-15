@@ -67,14 +67,17 @@ type StorefrontData = {
     quantity?:number,
   ) => void
 
-  updateQuantity: (
-    index: number,
-    quantity: number,
-  ) => void
 
-  removeFromCart: (
-    index: number,
-  ) => void
+updateQuantity: (
+  productId: string,
+  variantId: number | null,
+  amount: number,
+) => void
+
+removeFromCart: (
+  productId: string,
+  variantId: number | null,
+) => void
 
   clearCart: () => void
 }
@@ -322,12 +325,19 @@ const addToCart = async (
   )
 }
 
+
 const updateQuantity = async (
-  index: number,
+  productId: string,
+  variantId: number | null,
   amount: number,
 ) => {
-  const item =
-    cart[index]
+  const item = cart.find(
+    (currentItem) =>
+      String(currentItem.productId) ===
+        String(productId) &&
+      currentItem.variantId ===
+        variantId,
+  )
 
   if (!item) {
     return
@@ -337,32 +347,24 @@ const updateQuantity = async (
     item.quantity + amount
 
   const response =
-    await fetch(
-      '/api/cart',
-      {
-        method: 'PATCH',
-
-        headers: {
-          'Content-Type':
-            'application/json',
-        },
-
-        credentials:
-          'include',
-
-        body: JSON.stringify({
-          productId:
-            item.productId,
-
-          variantId:
-            item.variantId,
-
-          quantity,
-        }),
+    await fetch('/api/cart', {
+      method: 'PATCH',
+      headers: {
+        'Content-Type':
+          'application/json',
       },
-    )
+      credentials: 'include',
+      body: JSON.stringify({
+        productId,
+        variantId,
+        quantity,
+      }),
+    })
 
   if (!response.ok) {
+    console.error(
+      'Failed to update cart quantity',
+    )
     return
   }
 
@@ -373,41 +375,29 @@ const updateQuantity = async (
     data.items ?? [],
   )
 }
+
 const removeFromCart = async (
-  index: number,
+  productId: string,
+  variantId: number | null,
 ) => {
-  const item =
-    cart[index]
-
-  if (!item) {
-    return
-  }
-
   const response =
-    await fetch(
-      '/api/cart',
-      {
-        method: 'DELETE',
-
-        headers: {
-          'Content-Type':
-            'application/json',
-        },
-
-        credentials:
-          'include',
-
-        body: JSON.stringify({
-          productId:
-            item.productId,
-
-          variantId:
-            item.variantId,
-        }),
+    await fetch('/api/cart', {
+      method: 'DELETE',
+      headers: {
+        'Content-Type':
+          'application/json',
       },
-    )
+      credentials: 'include',
+      body: JSON.stringify({
+        productId,
+        variantId,
+      }),
+    })
 
   if (!response.ok) {
+    console.error(
+      'Failed to remove cart item',
+    )
     return
   }
 
@@ -535,6 +525,9 @@ const clearCart = async () => {
           updateQuantity={
             updateQuantity
           }
+          removeFromCart={
+            removeFromCart
+          }
           onCheckout={() => {
             setCartOpen(false)
             router.push(
@@ -577,6 +570,9 @@ function Header({
   const {
     data: session,
   } = useSession()
+
+  const router = useRouter()
+
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur-md">
@@ -645,6 +641,8 @@ function Header({
                 type="button"
                 onClick={async () => {
                   await signOut()
+                  router.push('/')
+                  router.refresh()
                 }}
                 className="hidden px-2 py-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-primary sm:block"
               >
@@ -708,30 +706,134 @@ function Header({
   )
 }
 
-function MobileMenu({ onClose }: { onClose: () => void }) {
-  return <div className="border-b border-border bg-background px-6 py-5 md:hidden"><nav className="flex flex-col gap-4">{navItems.map((item) => <Link key={item.href} href={item.href} onClick={onClose} className="font-serif text-xl">{item.label}</Link>)}</nav><div className="mt-6 flex gap-4 border-t border-border pt-5"><Link href="/contact" onClick={onClose} className="text-sm text-muted-foreground">Contact</Link><Link href="/wishlist" onClick={onClose} className="text-sm text-muted-foreground">Wishlist</Link></div></div>
+
+function MobileMenu({
+  onClose,
+}: {
+  onClose: () => void
+}) {
+  const {
+    data: session,
+  } = useSession()
+
+  return (
+    <div className="border-b border-border bg-background px-6 py-5 md:hidden">
+      <nav className="flex flex-col gap-4">
+        {navItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            onClick={onClose}
+            className="font-serif text-xl"
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+
+      {/* Mobile account actions */}
+      <div className="mt-6 border-t border-border pt-5">
+        {session?.user ? (
+          <div className="flex flex-col gap-4">
+            <p className="text-sm text-muted-foreground">
+              Hi,{' '}
+              {session.user.name ||
+                session.user.email}
+            </p>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await signOut()
+                onClose()
+                window.location.href = '/'
+              }}
+              className="text-left text-sm text-muted-foreground"
+            >
+              Sign out
+            </button>
+          </div>
+        ) : (
+          <div className="flex gap-5">
+            <Link
+              href="/sign-in"
+              onClick={onClose}
+              className="text-sm text-muted-foreground"
+            >
+              Login
+            </Link>
+
+            <Link
+              href="/sign-up"
+              onClick={onClose}
+              className="text-sm text-muted-foreground"
+            >
+              Register
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5 flex gap-5 border-t border-border pt-5">
+        <Link
+          href="/contact"
+          onClick={onClose}
+          className="text-sm text-muted-foreground"
+        >
+          Contact
+        </Link>
+
+        <Link
+          href="/wishlist"
+          onClick={onClose}
+          className="text-sm text-muted-foreground"
+        >
+          Wishlist
+        </Link>
+
+        <Link
+          href="/cart"
+          onClick={onClose}
+          className="text-sm text-muted-foreground"
+        >
+          Cart
+        </Link>
+      </div>
+    </div>
+  )
 }
 
 function Footer() {
   return <footer className="mt-20 bg-primary px-5 py-14 text-primary-foreground lg:px-10"><div className="mx-auto max-w-7xl"><div className="grid gap-10 md:grid-cols-[1.4fr_1fr_1fr_1.4fr]"><div><Link href="/" className="font-serif text-3xl">fabulous</Link><p className="mt-4 max-w-xs text-sm leading-6 text-primary-foreground/70">Beautiful bedding for the rituals that make a house feel like home.</p><div className="mt-6 flex gap-3"><a href="#" aria-label="Instagram" className="rounded-full border border-primary-foreground/25 px-3 py-2 font-mono text-[10px]">ig</a><a href="#" aria-label="Facebook" className="rounded-full border border-primary-foreground/25 px-3 py-2 font-mono text-[10px]">fb</a></div></div><div><h2 className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary-foreground/50">Explore</h2><nav className="mt-4 flex flex-col gap-3 text-sm"><Link href="/shop">Shop all</Link><Link href="/shop?category=Bedding">Bedding</Link><Link href="/shop?category=Accessories">Accessories</Link><Link href="/about">Our story</Link></nav></div><div><h2 className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary-foreground/50">Help</h2><nav className="mt-4 flex flex-col gap-3 text-sm"><Link href="/contact">Contact us</Link><Link href="/shipping">Shipping & returns</Link><Link href="/faq">FAQs</Link><Link href="/size-guide">Size guide</Link></nav></div><div><h2 className="font-mono text-[10px] uppercase tracking-[0.2em] text-primary-foreground/50">Stay in the know</h2><p className="mt-4 text-sm leading-6 text-primary-foreground/70">Seasonal notes, new arrivals and thoughtful home inspiration.</p><form className="mt-4 flex border-b border-primary-foreground/40 pb-2" onSubmit={(event) => event.preventDefault()}><input aria-label="Email address" placeholder="Your email address" type="email" className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-primary-foreground/45" /><button aria-label="Subscribe"><ArrowRight className="size-4" /></button></form></div></div><div className="mt-14 flex flex-col gap-3 border-t border-primary-foreground/15 pt-5 text-[10px] uppercase tracking-[0.16em] text-primary-foreground/45 sm:flex-row sm:items-center sm:justify-between"><span>© 2024 Fabulous Beddings</span><span>Made for slow mornings</span></div></div></footer>
 }
 
+
 function CartDrawer({
   open,
   onClose,
   cart,
   updateQuantity,
+  removeFromCart,
   onCheckout,
 }: {
   open: boolean
   onClose: () => void
   cart: CartItem[]
+
   updateQuantity: (
-    index: number,
+    productId: string,
+    variantId: number | null,
     amount: number,
   ) => void
+
+  removeFromCart: (
+    productId: string,
+    variantId: number | null,
+  ) => void
+
   onCheckout: () => void
 }) {
+
   const {
     products,
   } = useStorefrontData()
@@ -824,8 +926,9 @@ function CartDrawer({
                     quantity,
                     size,
                     color,
+                    productId,
+                    variantId,
                   },
-                  index,
                 ) => {
                   if (!product) {
                     return null
@@ -833,7 +936,7 @@ function CartDrawer({
 
                   return (
                     <div
-                      key={`${product.id}-${size}-${color}-${index}`}
+                      key={`${product.id}-${size}-${color}-${variantId ?? 'default'}`}
                       className="flex gap-4 border-b border-border pb-6"
                     >
                       <Link
@@ -884,7 +987,8 @@ function CartDrawer({
                               type="button"
                               onClick={() =>
                                 updateQuantity(
-                                  index,
+                                  productId,
+                                  variantId,
                                   -1,
                                 )
                               }
@@ -902,7 +1006,8 @@ function CartDrawer({
                               type="button"
                               onClick={() =>
                                 updateQuantity(
-                                  index,
+                                    productId,
+                                    variantId,
                                   1,
                                 )
                               }
@@ -917,8 +1022,9 @@ function CartDrawer({
                             type="button"
                             onClick={() => {
                               updateQuantity(
-                                index,
-                                -quantity,
+                                productId,
+                                variantId,
+                                -1,
                               )
                             }}
                             className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
@@ -2172,6 +2278,8 @@ export function CartPage() {
                   quantity,
                   size,
                   color,
+                  productId,
+                  variantId,
                 },
                 index,
               ) => {
@@ -2252,7 +2360,8 @@ export function CartPage() {
                             type="button"
                             onClick={() =>
                               updateQuantity(
-                                index,
+                                productId,
+                                variantId,
                                       - 1,
                               )
                             }
@@ -2272,7 +2381,8 @@ export function CartPage() {
                             type="button"
                             onClick={() =>
                               updateQuantity(
-                                index,
+                                productId,
+                                variantId,
                                   + 1,
                               )
                             }
@@ -2287,7 +2397,8 @@ export function CartPage() {
                           type="button"
                           onClick={() =>
                             removeFromCart(
-                              index,
+                              productId,
+                              variantId,
                             )
                           }
                           className="text-xs uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
