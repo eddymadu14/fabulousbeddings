@@ -48,6 +48,12 @@ import {
   type StorefrontCategory,
 } from '@/lib/store-data'
 
+
+import {
+  signOut,
+  useSession,
+} from '@/lib/auth-client'
+
 type StorefrontData = {
   products: Product[]
   categories: StorefrontCategory[]
@@ -128,33 +134,49 @@ export function StorefrontShell({
   const [cart, setCart] =
     useState<CartItem[]>([])
 
-    useEffect(() => {
-  const storedCart = window.localStorage.getItem(
-    'fabulous-beddings-cart',
-  )
 
-  if (!storedCart) {
-    return
+
+useEffect(() => {
+  let cancelled = false
+
+  async function loadCart() {
+    try {
+      const response =
+        await fetch(
+          '/api/cart',
+          {
+            credentials:
+              'include',
+          },
+        )
+
+      if (!response.ok) {
+        return
+      }
+
+      const data =
+        await response.json()
+
+      if (!cancelled) {
+        setCart(
+          data.items ?? [],
+        )
+      }
+    } catch (error) {
+      console.error(
+        'Failed to load cart',
+        error,
+      )
+    }
   }
 
-  try {
-    const parsedCart =
-      JSON.parse(storedCart) as CartItem[]
+  loadCart()
 
-    setCart(parsedCart)
-  } catch {
-    window.localStorage.removeItem(
-      'fabulous-beddings-cart',
-    )
+  return () => {
+    cancelled = true
   }
 }, [])
 
-useEffect(() => {
-  window.localStorage.setItem(
-    'fabulous-beddings-cart',
-    JSON.stringify(cart),
-  )
-}, [cart])
 
   const [wishlist, setWishlist] =
     useState<string[]>([])
@@ -188,16 +210,18 @@ useEffect(() => {
     )
   }
 
- const addToCart = (
+
+const addToCart = async (
   productId: string,
   size?: string,
   color?: string,
   quantity: number = 1,
 ) => {
-  const product = findProduct(
-    products,
-    productId,
-  )
+  const product =
+    findProduct(
+      products,
+      productId,
+    )
 
   if (!product) {
     return
@@ -213,88 +237,216 @@ useEffect(() => {
     product.colors[0] ??
     ''
 
-  const amount = Math.max(
-    1,
-    quantity,
-  )
+  const colourName =
+    itemColor.split(':')[0] ??
+    itemColor
 
-  setCart((current) => {
-    const existingIndex =
-      current.findIndex(
-        (entry) =>
-          entry.productId === productId &&
-          entry.size === itemSize &&
-          entry.color === itemColor,
-      )
+  const variant =
+    product.variants.find(
+      (item) => {
+        const parts =
+          item.name
+            .split(' — ')
+            .map((part) =>
+              part.trim(),
+            )
 
-    if (existingIndex === -1) {
-      return [
-        ...current,
-        {
-          productId,
-          quantity: amount,
-          size: itemSize,
-          color: itemColor,
-        },
-      ]
-    }
+        const variantSize =
+          parts[0] ?? ''
 
-    return current.map(
-      (entry, index) =>
-        index === existingIndex
-          ? {
-              ...entry,
-              quantity:
-                entry.quantity + amount,
-            }
-          : entry,
+        const variantColor =
+          parts
+            .slice(1)
+            .join(' — ')
+
+        return (
+          variantSize ===
+            itemSize &&
+          (
+            variantColor
+              .toLowerCase() ===
+              colourName.toLowerCase() ||
+            item.name
+              .toLowerCase()
+              .includes(
+                colourName.toLowerCase(),
+              )
+          )
+        )
+      },
     )
-  })
+
+  const response =
+    await fetch(
+      '/api/cart',
+      {
+        method: 'POST',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+
+        credentials:
+          'include',
+
+        body: JSON.stringify({
+          productId,
+          variantId:
+            variant?.id ?? null,
+          quantity:
+            Math.max(
+              1,
+              quantity,
+            ),
+        }),
+      },
+    )
+
+  if (!response.ok) {
+    notify(
+      'Unable to add item to your bag',
+    )
+    return
+  }
+
+  const data =
+    await response.json()
+
+  setCart(
+    data.items ?? [],
+  )
 
   notify(
     `${product.name} added to your bag`,
   )
 }
-  const updateQuantity = (
-    index: number,
-    amount: number,
-  ) => {
-    setCart((current) =>
-      current.flatMap(
-        (
-          item,
-          itemIndex,
-        ) =>
-          itemIndex !== index
-            ? item
-            : item.quantity +
-                amount >
-              0
-            ? [
-                {
-                  ...item,
-                  quantity:
-                    item.quantity +
-                    amount,
-                },
-              ]
-            : [],
-      ),
-    )
+
+const updateQuantity = async (
+  index: number,
+  amount: number,
+) => {
+  const item =
+    cart[index]
+
+  if (!item) {
+    return
   }
 
-  const removeFromCart = (
+  const quantity =
+    item.quantity + amount
+
+  const response =
+    await fetch(
+      '/api/cart',
+      {
+        method: 'PATCH',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+
+        credentials:
+          'include',
+
+        body: JSON.stringify({
+          productId:
+            item.productId,
+
+          variantId:
+            item.variantId,
+
+          quantity,
+        }),
+      },
+    )
+
+  if (!response.ok) {
+    return
+  }
+
+  const data =
+    await response.json()
+
+  setCart(
+    data.items ?? [],
+  )
+}
+const removeFromCart = async (
   index: number,
 ) => {
-  setCart((current) =>
-    current.filter(
-      (_, itemIndex) =>
-        itemIndex !== index,
-    ),
+  const item =
+    cart[index]
+
+  if (!item) {
+    return
+  }
+
+  const response =
+    await fetch(
+      '/api/cart',
+      {
+        method: 'DELETE',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+
+        credentials:
+          'include',
+
+        body: JSON.stringify({
+          productId:
+            item.productId,
+
+          variantId:
+            item.variantId,
+        }),
+      },
+    )
+
+  if (!response.ok) {
+    return
+  }
+
+  const data =
+    await response.json()
+
+  setCart(
+    data.items ?? [],
   )
 }
 
-const clearCart = () => {
+const clearCart = async () => {
+  const items = [...cart]
+
+  for (const item of items) {
+    await fetch(
+      '/api/cart',
+      {
+        method: 'DELETE',
+
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+
+        credentials:
+          'include',
+
+        body: JSON.stringify({
+          productId:
+            item.productId,
+
+          variantId:
+            item.variantId,
+        }),
+      },
+    )
+  }
+
   setCart([])
 }
 
@@ -333,6 +485,7 @@ const clearCart = () => {
         cart, 
         addToCart,
         updateQuantity,
+        removeFromCart,
          clearCart,
       }}
     >
@@ -409,7 +562,11 @@ function AnnouncementBar() {
   return <div className="bg-primary px-4 py-2 text-center font-mono text-[10px] uppercase tracking-[0.22em] text-primary-foreground">Complimentary delivery on orders over ₦150,000</div>
 }
 
-function Header({ count, menuOpen, setMenuOpen, onCart }: { count: number; menuOpen: boolean; setMenuOpen: (value: boolean) => void; onCart: () => void }) {
+function Header({ count, menuOpen, setMenuOpen, onCart }: 
+  { count: number; menuOpen: boolean; setMenuOpen: (value: boolean) => void; onCart: () => void }) {
+  const {
+    data: session,
+  } = useSession()
   return <header className="sticky top-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur-md">
     <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-10">
       <button className="rounded-full p-2 md:hidden" aria-label={menuOpen ? 'Close menu' : 'Open menu'} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X /> : <Menu />}</button>
@@ -464,6 +621,7 @@ function CartDrawer({
     return null
   }
 
+  
   return (
     <div
       className="fixed inset-0 z-50"
@@ -1381,7 +1539,9 @@ const handleAddToCart = () => {
     2200,
   )
 }
-
+  const {
+    data: session,
+  } = useSession()
   return (
     <div>
       {/* =====================================================
@@ -1652,6 +1812,43 @@ const handleAddToCart = () => {
             {/* =================================================
                 ADD TO CART
                 ================================================= */}
+
+                
+{session?.user ? (
+  <div className="hidden items-center gap-3 sm:flex">
+    <span className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+      Hi,{' '}
+      {session.user.name
+        ?.split(' ')[0]}
+    </span>
+
+    <button
+      type="button"
+      onClick={() =>
+        signOut()
+      }
+      className="text-[10px] uppercase tracking-[0.12em] hover:text-primary"
+    >
+      Sign out
+    </button>
+  </div>
+) : (
+  <div className="hidden items-center gap-3 sm:flex">
+    <Link
+      href="/sign-in"
+      className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
+    >
+      Sign in
+    </Link>
+
+    <Link
+      href="/sign-up"
+      className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
+    >
+      Register
+    </Link>
+  </div>
+)}
 
             <button
               type="button"

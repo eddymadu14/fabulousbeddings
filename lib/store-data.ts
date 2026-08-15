@@ -1,3 +1,21 @@
+
+
+export type StorefrontCategory = {
+  id: number
+  name: string
+  slug: string
+  image: string
+  count: string
+}
+
+
+export type ProductVariant = {
+  id: number
+  name: string
+  price: number
+  stock: number
+}
+
 export type Product = {
   id: string
   name: string
@@ -13,18 +31,12 @@ export type Product = {
   colors: string[]
   material: string
   featured?: boolean
-}
-
-export type StorefrontCategory = {
-  id: number
-  name: string
-  slug: string
-  image: string
-  count: string
+  variants: ProductVariant[]
 }
 
 export type CartItem = {
   productId: string
+  variantId: number | null
   quantity: number
   size: string
   color: string

@@ -231,6 +231,17 @@ function normalizeProduct(
       ? Math.min(...variantPrices)
       : product.price
 
+      
+const normalizedVariants =
+  activeVariants.map(
+    (variant) => ({
+      id: variant.id,
+      name: variant.name,
+      price: variant.price,
+      stock: variant.stock,
+    }),
+  )
+
   return {
     id: String(product.id),
 
@@ -268,6 +279,8 @@ function normalizeProduct(
      * Your database currently doesn't contain
      * a material column.
      */
+    variants: normalizedVariants,
+
     material: 'Premium bedding',
 
     featured:

@@ -336,6 +336,7 @@ const result = await db.transaction(
 
 revalidatePath('/owner/products')
 revalidatePath('/')
+revalidatePath('/shop')
 
 return result
 

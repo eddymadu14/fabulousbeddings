@@ -546,29 +546,6 @@ setCompareAtPrice('')
 setStock('')
 setStatus('published')
 
-const parsedVariants =
-  (product?.variants ?? []).map(
-    (variant: ProductVariant) => {
-      const parts =
-        variant.name.split(' — ')
-
-      return {
-        id: variant.id,
-        size: parts[0] ?? '',
-        color:
-          parts.slice(1).join(' — ') ??
-          '',
-        price: String(
-          variant.price,
-        ),
-        stock: String(
-          variant.stock,
-        ),
-      }
-    },
-  )
-
-setVariants(parsedVariants)
 
 setMessage(
   'Product created successfully.',

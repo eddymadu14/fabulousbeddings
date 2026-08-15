@@ -1,12 +1,16 @@
 import {
   getPublishedProducts,
   getPublishedCategories,
-   getPublishedProductsByCategory,
 } from '@/lib/storefront'
+
 
 import {
   StorefrontShell,
 } from '@/components/storefront'
+
+
+export const dynamic = 'force-dynamic'
+
 
 export default async function Page() {
   const [
@@ -15,8 +19,8 @@ export default async function Page() {
   ] = await Promise.all([
     getPublishedProducts(),
     getPublishedCategories(),
-    
   ])
+
 
   return (
     <StorefrontShell

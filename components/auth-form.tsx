@@ -38,9 +38,29 @@ if (result.error) {
   return
 }
 
+
+await fetch(
+  '/api/cart/merge',
+  {
+    method: 'POST',
+    credentials: 'include',
+  },
+)
+
+
 if (mode === 'sign-up') {
+  await fetch(
+    '/api/cart/merge',
+    {
+      method: 'POST',
+      credentials:
+        'include',
+    },
+  )
+
   router.push('/')
   router.refresh()
+
   return
 }
 

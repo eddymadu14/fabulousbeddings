@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
+
 import { and, eq, ne } from 'drizzle-orm'
 
 import { requireOwner } from '@/lib/auth/require-owner'
@@ -669,6 +671,11 @@ const images = await db
   )
   .orderBy(productImages.sortOrder)
 
+
+  
+revalidatePath('/')
+revalidatePath('/shop')
+revalidatePath(`/product/${productId}`)
 return NextResponse.json({
   ...updatedProduct,
   images,
@@ -747,6 +754,8 @@ if (!product) {
   )
 }
 
+revalidatePath('/')
+revalidatePath('/shop')
 return NextResponse.json(product)
 
 } catch (error) {
