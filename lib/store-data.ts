@@ -38,18 +38,24 @@ export type CartItem = {
   productId: string
   variantId: number | null
   quantity: number
-  size: string
-  color: string
+  size?: string
+  color?: string
 }
 
 export const formatPrice = (price: number) =>
   `₦${price.toLocaleString('en-NG')}`
 
+
 export function findProduct(
   products: Product[],
-  id: string,
+  id: string | number,
 ): Product | undefined {
-  return products.find((product) => product.id === id)
+  const productId = String(id)
+
+  return products.find(
+    (product) =>
+      String(product.id) === productId,
+  )
 }
 
 export function relatedProducts(

@@ -25,6 +25,16 @@ import {
   getOrCreateCart,
 } from '@/lib/cart'
 
+
+function serializeCartItems(
+  items: typeof cartItems.$inferSelect[],
+) {
+  return items.map((item) => ({
+    ...item,
+    productId: String(item.productId),
+  }))
+}
+
 async function getCartOwner() {
   const session =
     await auth.api.getSession({
@@ -77,7 +87,7 @@ export async function GET() {
 
   return NextResponse.json({
     cartId: cart.id,
-    items,
+items: serializeCartItems(items),
   })
 }
 
@@ -234,7 +244,7 @@ export async function POST(
 
     return NextResponse.json({
       cartId: cart.id,
-      items,
+items: serializeCartItems(items),
     })
   } catch {
     return NextResponse.json(
@@ -380,7 +390,7 @@ export async function PATCH(
 
     return NextResponse.json({
       cartId: cart.id,
-      items,
+items: serializeCartItems(items),
     })
   } catch {
     return NextResponse.json(
@@ -464,7 +474,7 @@ export async function DELETE(
 
     return NextResponse.json({
       cartId: cart.id,
-      items,
+items: serializeCartItems(items),
     })
   } catch {
     return NextResponse.json(
