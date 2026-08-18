@@ -72,18 +72,44 @@ export function relatedProducts(
     .slice(0, 3)
 }
 
+
 export function cartSubtotal(
   cart: CartItem[],
   products: Product[],
 ): number {
-  return cart.reduce((total, item) => {
-    const product = findProduct(products, item.productId)
+  return cart.reduce(
+    (total, item) => {
+      const product =
+        findProduct(
+          products,
+          item.productId,
+        )
 
-    return (
-      total +
-      (product?.price ?? 0) * item.quantity
-    )
-  }, 0)
+      if (!product) {
+        return total
+      }
+
+      const variant =
+        item.variantId == null
+          ? undefined
+          : product.variants.find(
+              (variant) =>
+                Number(variant.id) ===
+                Number(item.variantId),
+            )
+
+      const unitPrice =
+        variant?.price ??
+        product.price
+
+      return (
+        total +
+        unitPrice *
+          item.quantity
+      )
+    },
+    0,
+  )
 }
 
 export function getCartItems(

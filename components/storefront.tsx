@@ -68,16 +68,15 @@ type StorefrontData = {
   ) => void
 
 
+
 updateQuantity: (
-  productId: string,
-  variantId: number | null,
+  itemId: number,
   amount: number,
-) => void
+) => Promise<void>
 
 removeFromCart: (
-  productId: string,
-  variantId: number | null,
-) => void
+  itemId: number,
+) => Promise<void>
 
   clearCart: () => void
 }
@@ -327,37 +326,24 @@ const addToCart = async (
 
 
 
+
 const updateQuantity = async (
-  productId: string,
-  variantId: number | null,
+  itemId: number,
   amount: number,
 ) => {
   const currentItem = cart.find(
-    (item) =>
-      String(item.productId) ===
-        String(productId) &&
-      (
-        item.variantId == null
-          ? variantId == null
-          : Number(item.variantId) ===
-            Number(variantId)
-      ),
+    (item) => item.id === itemId,
   )
 
   if (!currentItem) {
     console.error(
       'Cart item not found in local state',
-      {
-        productId,
-        variantId,
-        cart,
-      },
+      { itemId },
     )
-
     return
   }
 
-  const newQuantity =
+  const quantity =
     currentItem.quantity + amount
 
   try {
@@ -371,13 +357,8 @@ const updateQuantity = async (
         },
         credentials: 'include',
         body: JSON.stringify({
-          productId:
-            String(productId),
-          variantId:
-            variantId == null
-              ? null
-              : Number(variantId),
-          quantity: newQuantity,
+          itemId,
+          quantity,
         }),
       },
     )
@@ -405,9 +386,9 @@ const updateQuantity = async (
 }
 
 
+
 const removeFromCart = async (
-  productId: string,
-  variantId: number | null,
+  itemId: number,
 ) => {
   try {
     const response = await fetch(
@@ -420,12 +401,7 @@ const removeFromCart = async (
         },
         credentials: 'include',
         body: JSON.stringify({
-          productId:
-            String(productId),
-          variantId:
-            variantId == null
-              ? null
-              : Number(variantId),
+          itemId,
         }),
       },
     )
@@ -469,13 +445,10 @@ const clearCart = async () => {
         credentials:
           'include',
 
-        body: JSON.stringify({
-          productId:
-            item.productId,
-
-          variantId:
-            item.variantId,
-        }),
+       
+body: JSON.stringify({
+  itemId: item.id,
+}),
       },
     )
   }
@@ -863,16 +836,15 @@ function CartDrawer({
   onClose: () => void
   cart: CartItem[]
 
-  updateQuantity: (
-    productId: string,
-    variantId: number | null,
-    amount: number,
-  ) => void
+ 
+updateQuantity: (
+  itemId: number,
+  amount: number,
+) => Promise<void>
 
-  removeFromCart: (
-    productId: string,
-    variantId: number | null,
-  ) => void
+removeFromCart: (
+  itemId: number,
+) => Promise<void>
 
   onCheckout: () => void
 }) {
@@ -965,11 +937,11 @@ function CartDrawer({
               {items.map(
                 (
                   {
+                    id,
                     product,
                     quantity,
                     size,
                     color,
-                    productId,
                     variantId,
                   },
                 ) => {
@@ -979,7 +951,7 @@ function CartDrawer({
 
                   return (
                     <div
-                      key={`${product.id}-${size}-${color}-${variantId ?? 'default'}`}
+                      key={id}
                       className="flex gap-4 border-b border-border pb-6"
                     >
                       <Link
@@ -1016,10 +988,17 @@ function CartDrawer({
                             </div>
 
                             <span className="shrink-0 text-sm">
-                              {formatPrice(
-                                product.price *
-                                  quantity,
-                              )}
+                             
+{formatPrice(
+  (
+    product.variants.find(
+      (variant) =>
+        Number(variant.id) ===
+        Number(variantId),
+    )?.price ??
+    product.price
+  ) * quantity,
+)}
                             </span>
                           </div>
                         </div>
@@ -1030,8 +1009,7 @@ function CartDrawer({
                               type="button"
                               onClick={() =>
                                 updateQuantity(
-                                  productId,
-                                  variantId,
+                                  id,
                                   -1,
                                 )
                               }
@@ -1049,8 +1027,7 @@ function CartDrawer({
                               type="button"
                               onClick={() =>
                                 updateQuantity(
-                                    productId,
-                                    variantId,
+                                    id,
                                   1,
                                 )
                               }
@@ -1064,11 +1041,7 @@ function CartDrawer({
                           <button
                             type="button"
                             onClick={() => {
-                              updateQuantity(
-                                productId,
-                                variantId,
-                                -1,
-                              )
+                              removeFromCart(id)
                             }}
                             className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
                           >
@@ -2317,11 +2290,11 @@ export function CartPage() {
             {items.map(
               (
                 {
+                  id,
                   product,
                   quantity,
                   size,
                   color,
-                  productId,
                   variantId,
                 },
                 index,
