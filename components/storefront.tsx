@@ -65,6 +65,8 @@ type StorefrontData = {
     size?: string,
     color?: string,
     quantity?:number,
+      variantId?: number | null,
+
   ) => void
 
 
@@ -123,6 +125,32 @@ const navItems = [
     href: '/about',
   },
 ]
+
+
+
+function getVariant(
+  product: Product,
+  size?: string,
+  color?: string,
+  variantId?: number | null,
+) {
+  // If an exact variant ID was supplied,
+  // ALWAYS use it.
+  if (variantId != null) {
+    return product.variants.find(
+      (variant) =>
+        Number(variant.id) ===
+        Number(variantId),
+    )
+  }
+
+  // No variant ID supplied.
+  // This is primarily for Quick Add.
+  const defaultVariant =
+    product.variants?.[0]
+
+  return defaultVariant
+}
 
 export function StorefrontShell({
   children,
@@ -213,21 +241,56 @@ useEffect(() => {
   }
 
 
+
 const addToCart = async (
   productId: string,
   size?: string,
   color?: string,
   quantity: number = 1,
+  variantId?: number | null,
 ) => {
-  const product =
-    findProduct(
-      products,
-      productId,
-    )
+  const product = findProduct(
+    products,
+    productId,
+  )
 
   if (!product) {
     return
   }
+
+  
+const variant =
+  getVariant(
+    product,
+    size,
+    color,
+    variantId,
+  )
+
+const resolvedVariantId =
+  variant?.id ?? null
+
+const existingItem =
+  cart.find(
+    (item) =>
+      String(item.productId) ===
+        String(productId) &&
+      Number(
+        item.variantId ?? 0,
+      ) ===
+        Number(
+          resolvedVariantId ?? 0,
+        ),
+  )
+  
+if (existingItem) {
+  await updateQuantity(
+    existingItem.id,
+    quantity,
+  )
+
+  return
+}
 
   const itemSize =
     size ??
@@ -239,68 +302,114 @@ const addToCart = async (
     product.colors[0] ??
     ''
 
-  const colourName =
-    itemColor.split(':')[0] ??
-    itemColor
-
-  const variant =
-    product.variants.find(
-      (item) => {
-        const parts =
-          item.name
-            .split(' — ')
-            .map((part) =>
-              part.trim(),
-            )
-
-        const variantSize =
-          parts[0] ?? ''
-
-        const variantColor =
-          parts
-            .slice(1)
-            .join(' — ')
-
-        return (
-          variantSize ===
-            itemSize &&
-          (
-            variantColor
-              .toLowerCase() ===
-              colourName.toLowerCase() ||
-            item.name
-              .toLowerCase()
-              .includes(
-                colourName.toLowerCase(),
-              )
-          )
+  /*
+   * If the caller explicitly supplied a
+   * variantId, that variant is authoritative.
+   *
+   * This is what the product page uses.
+   *
+   * Quick Add can omit variantId and we
+   * resolve the first/default variant.
+   */
+  let selectedVariant =
+    variantId != null
+      ? product.variants.find(
+          (variant) =>
+            Number(variant.id) ===
+            Number(variantId),
         )
-      },
+      : undefined
+
+  /*
+   * Quick Add fallback:
+   * resolve the first variant matching
+   * the product's default size/color.
+   */
+  if (!selectedVariant) {
+    const colourName =
+      itemColor.split(':')[0] ??
+      itemColor
+
+    selectedVariant =
+      product.variants.find(
+        (variant) => {
+          const parts =
+            variant.name
+              .split(' — ')
+              .map((part) =>
+                part.trim(),
+              )
+
+          const variantSize =
+            parts[0] ?? ''
+
+          const variantColor =
+            parts
+              .slice(1)
+              .join(' — ')
+
+          return (
+            variantSize ===
+              itemSize &&
+            (
+              variantColor
+                .toLowerCase() ===
+                colourName.toLowerCase() ||
+              variant.name
+                .toLowerCase()
+                .includes(
+                  colourName.toLowerCase(),
+                )
+            )
+          )
+        },
+      )
+  }
+
+ 
+  /*
+   * IMPORTANT:
+   *
+   * Check the existing local cart first.
+   *
+   * Same product + same variant =
+   * increase quantity.
+   *
+   * Different variant =
+   * separate cart line.
+   */
+
+  if (existingItem) {
+    await updateQuantity(
+      existingItem.id,
+      quantity,
     )
+
+    notify(
+      `${product.name} quantity updated`,
+    )
+
+    return
+  }
 
   const response =
     await fetch(
       '/api/cart',
       {
         method: 'POST',
-
         headers: {
           'Content-Type':
             'application/json',
         },
-
-        credentials:
-          'include',
-
+        credentials: 'include',
         body: JSON.stringify({
           productId,
           variantId:
-            variant?.id ?? null,
-          quantity:
-            Math.max(
-              1,
-              quantity,
-            ),
+            resolvedVariantId,
+          quantity: Math.max(
+            1,
+            quantity,
+          ),
         }),
       },
     )
@@ -323,6 +432,7 @@ const addToCart = async (
     `${product.name} added to your bag`,
   )
 }
+
 
 
 
@@ -1265,7 +1375,15 @@ export function ProductCard({
   onWishlist,
 }: {
   product: Product
-  onAdd?: (id: string) => void
+
+  
+onAdd?: (
+  productId: string,
+  size?: string,
+  color?: string,
+  quantity?: number,
+  variantId?: number | null,
+) => void
   wishlist?: boolean
   onWishlist?: (id: string) => void
 }) {
@@ -1273,14 +1391,33 @@ export function ProductCard({
     addToCart,
   } = useStorefrontData()
 
-  const handleQuickAdd = () => {
-    if (onAdd) {
-      onAdd(product.id)
-      return
-    }
 
-    addToCart(product.id)
+const handleQuickAdd = () => {
+  const defaultVariant =
+    product.variants?.[0]
+
+  if (onAdd) {
+    onAdd(
+      product.id,
+      undefined,
+      undefined,
+      1,
+      defaultVariant?.id ??
+        null,
+    )
+
+    return
   }
+
+  addToCart(
+    product.id,
+    undefined,
+    undefined,
+    1,
+    defaultVariant?.id ??
+      null,
+  )
+}
 
   return (
     <article className="group">
@@ -1756,6 +1893,36 @@ export function ProductPage({
     product.colors[0] ?? '',
   )
 
+  
+const selectedVariant =
+  product.variants.find(
+    (variant) => {
+      const parts =
+        variant.name
+          .split(' — ')
+          .map((part) =>
+            part.trim(),
+          )
+
+      const variantSize =
+        parts[0] ?? ''
+
+      const variantColor =
+        parts
+          .slice(1)
+          .join(' — ')
+
+      return (
+        variantSize ===
+          selectedSize &&
+        variantColor
+          .toLowerCase() ===
+          selectedColor
+            .toLowerCase()
+      )
+    },
+  )
+
   const [
     quantity,
     setQuantity,
@@ -1773,17 +1940,57 @@ export function ProductPage({
     )
 
  
+
 const handleAddToCart = () => {
+  const selectedVariant =
+    product.variants.find(
+      (variant) => {
+        const parts =
+          variant.name
+            .split(' — ')
+            .map((part) =>
+              part.trim(),
+            )
+
+        const variantSize =
+          parts[0] ?? ''
+
+        const variantColor =
+          parts
+            .slice(1)
+            .join(' — ')
+
+        const selectedColorName =
+          selectedColor
+            ?.split(':')[0] ??
+          selectedColor
+
+        return (
+          variantSize ===
+            selectedSize &&
+          (
+            variantColor
+              .toLowerCase() ===
+              selectedColorName.toLowerCase() ||
+            variant.name
+              .toLowerCase()
+              .includes(
+                selectedColorName.toLowerCase(),
+              )
+          )
+        )
+      },
+    )
+
   addToCart(
     product.id,
     selectedSize,
     selectedColor,
     quantity,
+    selectedVariant?.id ?? null,
   )
 
-
   setAdded(true)
-
 
   window.setTimeout(
     () => {
@@ -1792,6 +1999,7 @@ const handleAddToCart = () => {
     2200,
   )
 }
+
   const {
     data: session,
   } = useSession()
@@ -1865,6 +2073,7 @@ const handleAddToCart = () => {
             <div className="mt-6 flex items-center gap-3">
               <span className="font-serif text-2xl">
                 {formatPrice(
+                  selectedVariant?.price ??
                   product.price,
                 )}
               </span>
