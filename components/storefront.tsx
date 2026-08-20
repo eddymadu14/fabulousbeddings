@@ -128,28 +128,40 @@ const navItems = [
 
 
 
+
 function getVariant(
   product: Product,
-  size?: string,
-  color?: string,
   variantId?: number | null,
 ) {
-  // If an exact variant ID was supplied,
-  // ALWAYS use it.
-  if (variantId != null) {
-    return product.variants.find(
-      (variant) =>
-        Number(variant.id) ===
-        Number(variantId),
-    )
+  /*
+   * A product without variants MUST use
+   * the product's base price.
+   *
+   * Do not silently attach variant[0].
+   */
+
+  if (
+    !product.variants ||
+    product.variants.length === 0
+  ) {
+    return undefined
   }
 
-  // No variant ID supplied.
-  // This is primarily for Quick Add.
-  const defaultVariant =
-    product.variants?.[0]
+  /*
+   * No variant selected.
+   *
+   * Do not guess.
+   */
 
-  return defaultVariant
+  if (variantId == null) {
+    return undefined
+  }
+
+  return product.variants.find(
+    (variant) =>
+      Number(variant.id) ===
+      Number(variantId),
+  )
 }
 
 export function StorefrontShell({
