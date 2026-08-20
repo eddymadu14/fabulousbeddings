@@ -2512,10 +2512,22 @@ export function CartPage() {
                   return null
                 }
 
-                const lineTotal =
-                  product.price *
-                  quantity
+                
+const variant =
+  variantId == null
+    ? undefined
+    : product.variants.find(
+        (item) =>
+          Number(item.id) ===
+          Number(variantId),
+      )
 
+const unitPrice =
+  variant?.price ??
+  product.price
+
+              const lineTotal =
+  unitPrice * quantity
                 return (
                   <div
                     key={`${product.id}-${size}-${color}-${variantId ?? 'default' }`}
@@ -2726,18 +2738,49 @@ export function CartPage() {
   )
 }
 
+
 export function CheckoutPage() {
   const {
     cart,
     products,
-    clearCart,
   } = useStorefrontData()
 
-  const [
-    placed,
-    setPlaced,
-  ] = useState(false)
+  const [placed, setPlaced] =
+    useState(false)
 
+  const [isSubmitting, setIsSubmitting] =
+    useState(false)
+
+  const [formError, setFormError] =
+    useState('')
+
+  const [checkout, setCheckout] =
+    useState({
+      email: '',
+      firstName: '',
+      lastName: '',
+      address: '',
+      city: '',
+      state: '',
+      phone: '',
+    })
+const [deliveryMethod, setDeliveryMethod] =
+  useState<'standard'>('standard')
+
+const [paymentMethod, setPaymentMethod] =
+  useState<'pay_on_delivery' | 'card_bank'>(
+    'pay_on_delivery',
+  )
+    
+  const updateCheckoutField = (
+    field: keyof typeof checkout,
+    value: string,
+  ) => {
+    setCheckout((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
   const items =
     getCartItems(
       cart,
@@ -2750,35 +2793,85 @@ export function CheckoutPage() {
       products,
     )
 
-  const delivery =
-    subtotal >= 150000
-      ? 0
-      : 0
+    
+const FREE_DELIVERY_THRESHOLD = 150000
 
-  const total =
-    subtotal + delivery
+const STANDARD_DELIVERY_FEE = 5000
 
-  const handleSubmit = (
+const delivery =
+  subtotal >= FREE_DELIVERY_THRESHOLD
+    ? 0
+    : STANDARD_DELIVERY_FEE
+
+const total =
+  subtotal + delivery
+
+
+  const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault()
 
-    /*
-     * This currently only simulates order placement.
-     *
-     * Real order creation should eventually happen through:
-     *
-     * POST /api/orders
-     *
-     * after payment/delivery details are validated.
-     */
+    setFormError('')
 
-    setPlaced(true)
+    if (
+      !checkout.email ||
+      !checkout.firstName ||
+      !checkout.lastName ||
+      !checkout.address ||
+      !checkout.city ||
+      !checkout.state ||
+      !checkout.phone
+    ) {
+      setFormError(
+        'Please complete all required fields.',
+      )
+      return
+    }
 
-    /*
-     * We intentionally do NOT clear the cart
-     * until real order creation/payment succeeds.
-     */
+    setIsSubmitting(true)
+
+    try {
+   
+      
+const checkoutPayload = {
+  customer: checkout,
+
+  delivery: {
+    method: deliveryMethod,
+    fee: delivery,
+  },
+
+  payment: {
+    method: paymentMethod,
+  },
+
+  subtotal,
+  total,
+}
+      
+console.log(
+  'Checkout payload',
+  checkoutPayload,
+)
+      console.log(
+        'Checkout information:',
+        checkout,
+      )
+
+      setPlaced(true)
+    } catch (error) {
+      console.error(
+        'Checkout submission failed',
+        error,
+      )
+
+      setFormError(
+        'Something went wrong. Please try again.',
+      )
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   if (placed) {
@@ -2861,9 +2954,7 @@ export function CheckoutPage() {
             Almost home
           </p>
 
-          <h1 className="mt-3 font-serif text-5xl">
-            Checkout
-          </h1>
+      
 
           <form
             className="mt-10 flex flex-col gap-8"
@@ -2878,14 +2969,23 @@ export function CheckoutPage() {
                 Contact details
               </legend>
 
-              <input
-                required
-                type="email"
-                name="email"
-                placeholder="Email address"
-                aria-label="Email address"
-                className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-              />
+            
+<input
+  required
+  type="email"
+  name="email"
+  value={checkout.email}
+  onChange={(event) =>
+    updateCheckoutField(
+      'email',
+      event.target.value,
+    )
+  }
+  placeholder="Email address"
+  aria-label="Email address"
+  autoComplete="email"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
             </fieldset>
 
             {/* Delivery */}
@@ -2896,92 +2996,257 @@ export function CheckoutPage() {
               </legend>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <input
-                  required
-                  name="firstName"
-                  placeholder="First name"
-                  aria-label="First name"
-                  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-                />
+             
+<input
+  required
+  name="firstName"
+  value={checkout.firstName}
+  onChange={(event) =>
+    updateCheckoutField(
+      'firstName',
+      event.target.value,
+    )
+  }
+  placeholder="First name"
+  aria-label="First name"
+  autoComplete="given-name"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
 
-                <input
-                  required
-                  name="lastName"
-                  placeholder="Last name"
-                  aria-label="Last name"
-                  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-                />
+             <input
+  required
+  name="lastName"
+  value={checkout.lastName}
+  onChange={(event) =>
+    updateCheckoutField(
+      'lastName',
+      event.target.value,
+    )
+  }
+  placeholder="Last name"
+  aria-label="Last name"
+  autoComplete="family-name"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
               </div>
 
-              <input
-                required
-                name="address"
-                placeholder="Street address"
-                aria-label="Street address"
-                className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-              />
+           
+<input
+  required
+  name="address"
+  value={checkout.address}
+  onChange={(event) =>
+    updateCheckoutField(
+      'address',
+      event.target.value,
+    )
+  }
+  placeholder="Street address"
+  aria-label="Street address"
+  autoComplete="street-address"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <input
-                  required
-                  name="city"
-                  placeholder="City"
-                  aria-label="City"
-                  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-                />
+              
+<input
+  required
+  name="city"
+  value={checkout.city}
+  onChange={(event) =>
+    updateCheckoutField(
+      'city',
+      event.target.value,
+    )
+  }
+  placeholder="City"
+  aria-label="City"
+  autoComplete="address-level2"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
 
-                <select
-                  required
-                  name="state"
-                  aria-label="State"
-                  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none"
-                  defaultValue=""
-                >
-                  <option
-                    value=""
-                    disabled
-                  >
-                    Select state
-                  </option>
-
-                  <option>
-                    Lagos
-                  </option>
-
-                  <option>
-                    Abuja
-                  </option>
-
-                  <option>
-                    Rivers
-                  </option>
-
-                  <option>
-                    Kano
-                  </option>
-                </select>
+<input
+  required
+  name="state"
+  value={checkout.state}
+  onChange={(event) =>
+    updateCheckoutField(
+      'state',
+      event.target.value,
+    )
+  }
+  placeholder="State"
+  aria-label="State"
+  autoComplete="address-level1"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
               </div>
 
-              <input
-                required
-                name="phone"
-                type="tel"
-                placeholder="Phone number"
-                aria-label="Phone number"
-                className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
-              />
+<input
+  required
+  name="phone"
+  type="tel"
+  value={checkout.phone}
+  onChange={(event) =>
+    updateCheckoutField(
+      'phone',
+      event.target.value,
+    )
+  }
+  placeholder="Phone number"
+  aria-label="Phone number"
+  autoComplete="tel"
+  className="border-b border-border bg-transparent px-0 py-3 text-sm outline-none placeholder:text-muted-foreground focus:border-primary"
+/>
             </fieldset>
+
+            
+<fieldset className="flex flex-col gap-4">
+  <legend className="font-serif text-2xl p-2">
+    Delivery
+  </legend>
+
+  <div className="border border-primary bg-secondary p-5">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-sm font-medium">
+          Standard delivery
+        </p>
+
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          Delivery to your address.
+        </p>
+      </div>
+
+      <span className="text-sm">
+        {delivery === 0
+          ? 'Complimentary'
+          : formatPrice(delivery)}
+      </span>
+    </div>
+  </div>
+
+  {subtotal >=
+    FREE_DELIVERY_THRESHOLD && (
+    <p className="text-xs text-muted-foreground">
+      Your order qualifies for
+      complimentary delivery.
+    </p>
+  )}
+</fieldset>
+
+            
+<fieldset className="flex flex-col gap-4">
+
+  <legend className="font-serif text-2xl p-2">
+    Payment
+  </legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+
+  <button
+    type="button"
+    onClick={() =>
+      setPaymentMethod(
+        'pay_on_delivery',
+      )
+    }
+    className={`flex items-start gap-4 border p-5 text-left transition ${
+      paymentMethod ===
+      'pay_on_delivery'
+        ? 'border-primary bg-secondary'
+        : 'border-border'
+    }`}
+  >
+    <span
+      className={`mt-1 flex size-4 shrink-0 items-center justify-center rounded-full border ${
+        paymentMethod ===
+        'pay_on_delivery'
+          ? 'border-primary'
+          : 'border-border'
+      }`}
+    >
+      {paymentMethod ===
+        'pay_on_delivery' && (
+        <span className="size-2 rounded-full bg-primary" />
+      )}
+    </span>
+
+    <span>
+      <span className="block text-sm font-medium">
+        Pay on delivery
+      </span>
+
+      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+        Pay when your order is delivered.
+      </span>
+    </span>
+  </button>
+
+  <button
+    type="button"
+    onClick={() =>
+      setPaymentMethod(
+        'card_bank',
+      )
+    }
+    className={`flex items-start gap-4 border p-5 text-left transition ${
+      paymentMethod ===
+      'card_bank'
+        ? 'border-primary bg-secondary'
+        : 'border-border'
+    }`}
+  >
+    <span
+      className={`mt-1 flex size-4 shrink-0 items-center justify-center rounded-full border ${
+        paymentMethod ===
+        'card_bank'
+          ? 'border-primary'
+          : 'border-border'
+      }`}
+    >
+      {paymentMethod ===
+        'card_bank' && (
+        <span className="size-2 rounded-full bg-primary" />
+      )}
+    </span>
+
+    <span>
+      <span className="block text-sm font-medium">
+        Card / Bank
+      </span>
+
+      <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+        Pay securely online.
+      </span>
+    </span>
+  </button></div>
+</fieldset>
 
             {/* Submit */}
 
-            <button
-              type="submit"
-              className="bg-primary px-6 py-4 text-xs font-medium uppercase tracking-[0.14em] text-primary-foreground sm:self-start"
-            >
-              Place order
+{formError && (
+  <p
+    role="alert"
+    className="text-sm text-destructive"
+  >
+    {formError}
+  </p>
+)}
+            
+<button
+  type="submit"
+  disabled={isSubmitting}
+  className="bg-primary px-6 py-4 text-xs font-medium uppercase tracking-[0.14em] text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60 sm:self-start">
+  
+  {isSubmitting
+    ? 'Processing...'
+    : paymentMethod ===
+        'card_bank'
+      ? 'Continue to payment'
+      : 'Place order'}
 
-              <ArrowRight className="ml-2 inline size-4" />
-            </button>
+  <ArrowRight className="ml-2 inline size-4" />
+</button>
           </form>
         </div>
 
@@ -3041,10 +3306,25 @@ export function CheckoutPage() {
                     </div>
 
                     <span className="text-sm">
-                      {formatPrice(
-                        product.price *
-                          quantity,
-                      )}
+                   
+{formatPrice(
+  (() => {
+    const variant =
+      variantId == null
+        ? undefined
+        : product.variants.find(
+            (item) =>
+              Number(item.id) ===
+              Number(variantId),
+          )
+
+    return (
+      (variant?.price ??
+        product.price) *
+      quantity
+    )
+  })(),
+)}
                     </span>
                   </div>
                 )
@@ -3073,10 +3353,11 @@ export function CheckoutPage() {
               </span>
 
               <span>
-                {subtotal >=
-                150000
-                  ? 'Complimentary'
-                  : 'Calculated at checkout'}
+             
+{delivery === 0
+  ? 'Complimentary'
+  : formatPrice(delivery)}
+
               </span>
             </div>
           </div>

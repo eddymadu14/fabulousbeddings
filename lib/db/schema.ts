@@ -402,39 +402,102 @@ export const cartItems = pgTable('cart_items', {
 // ORDERS
 // ============================================================
 
-export const orders = pgTable('orders', {
-  id: serial('id').primaryKey(),
 
-  // Nullable because guests can checkout.
-  userId: text('userId')
-    .references(() => user.id, {
-      onDelete: 'set null',
-    }),
+export const orders = pgTable(
+  'orders',
+  {
+    id: serial('id').primaryKey(),
 
-  // Useful for connecting a guest order to the visitor.
-  visitorId: text('visitorId')
-    .references(() => visitorSessions.id, {
-      onDelete: 'set null',
-    }),
+    userId: text('userId')
+      .references(() => user.id, {
+        onDelete: 'set null',
+      }),
 
-  customerName: text('customerName').notNull(),
+    visitorId: text('visitorId')
+      .references(
+        () => visitorSessions.id,
+        {
+          onDelete: 'set null',
+        },
+      ),
 
-  customerEmail: text('customerEmail').notNull(),
+    customerName: text(
+      'customerName',
+    ).notNull(),
 
-  customerPhone: text('customerPhone'),
+    customerEmail: text(
+      'customerEmail',
+    ).notNull(),
 
-  total: integer('total').notNull(),
+    customerPhone: text(
+      'customerPhone',
+    ),
 
-  status: text('status')
-    .notNull()
-    .default('pending'),
+    shippingAddress: text(
+      'shippingAddress',
+    ).notNull(),
 
-  createdAt: timestamp('createdAt')
-    .notNull()
-    .defaultNow(),
+    shippingCity: text(
+      'shippingCity',
+    ).notNull(),
 
-  fulfilledAt: timestamp('fulfilledAt'),
-})
+    shippingState: text(
+      'shippingState',
+    ).notNull(),
+
+    subtotal: integer(
+      'subtotal',
+    ).notNull(),
+
+    deliveryFee: integer(
+      'deliveryFee',
+    ).notNull(),
+
+    total: integer(
+      'total',
+    ).notNull(),
+
+    deliveryMethod: text(
+      'deliveryMethod',
+    ).notNull(),
+
+    paymentMethod: text(
+      'paymentMethod',
+    ).notNull(),
+
+    paymentStatus: text(
+      'paymentStatus',
+    )
+      .notNull()
+      .default('pending'),
+
+    orderStatus: text(
+      'orderStatus',
+    )
+      .notNull()
+      .default('pending'),
+
+    paymentReference: text(
+      'paymentReference',
+    ),
+
+    createdAt: timestamp(
+      'createdAt',
+    )
+      .notNull()
+      .defaultNow(),
+
+    updatedAt: timestamp(
+      'updatedAt',
+    )
+      .notNull()
+      .defaultNow(),
+
+    fulfilledAt: timestamp(
+      'fulfilledAt',
+    ),
+  },
+)
 
 
 // ============================================================
