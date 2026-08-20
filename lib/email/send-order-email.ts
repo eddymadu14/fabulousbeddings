@@ -493,12 +493,12 @@ export async function sendOwnerOrderEmail(
 ) {
 
   const ownerEmail =
-    process.env.OWNER_EMAIL
+    process.env.BREVO_FROM_EMAIL
 
 
   if (!ownerEmail) {
     throw new Error(
-      'OWNER_EMAIL is not configured.',
+      'BREVO_FROM_EMAIL is not configured.',
     )
   }
 
