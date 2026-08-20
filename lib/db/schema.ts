@@ -479,7 +479,7 @@ export const orders = pgTable(
 
     paymentReference: text(
       'paymentReference',
-    ),
+    ).unique(),
 
     createdAt: timestamp(
       'createdAt',

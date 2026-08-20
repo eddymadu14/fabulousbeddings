@@ -1,11 +1,10 @@
 
-
 import 'server-only'
 
 const PAYSTACK_API_URL =
   'https://api.paystack.co'
 
-type InitializePaystackTransactionParams = {
+type InitializePaystackParams = {
   email: string
   amount: number
   reference: string
@@ -23,13 +22,34 @@ type PaystackInitializeResponse = {
   }
 }
 
+type PaystackVerifyResponse = {
+  status: boolean
+  message: string
+  data?: {
+    id: number
+    status: string
+    reference: string
+    amount: number
+    currency: string
+    paid_at: string | null
+    channel: string | null
+    customer?: {
+      email: string
+    }
+  }
+}
+
+/* ============================================================
+   INITIALIZE TRANSACTION
+============================================================ */
+
 export async function initializePaystackTransaction({
   email,
   amount,
   reference,
   callbackUrl,
   metadata,
-}: InitializePaystackTransactionParams) {
+}: InitializePaystackParams) {
   const secretKey =
     process.env.PAYSTACK_SECRET_KEY
 
@@ -39,6 +59,10 @@ export async function initializePaystackTransaction({
     )
   }
 
+  /*
+   * Database amounts are stored in Naira.
+   * Paystack expects kobo.
+   */
   const amountInKobo =
     Math.round(amount * 100)
 
@@ -67,10 +91,17 @@ export async function initializePaystackTransaction({
 
         body: JSON.stringify({
           email,
-          amount: amountInKobo,
-          currency: 'NGN',
+
+          amount:
+            amountInKobo,
+
+          currency:
+            'NGN',
+
           reference,
-          callback_url: callbackUrl,
+
+          callback_url:
+            callbackUrl,
 
           channels: [
             'card',
@@ -78,7 +109,10 @@ export async function initializePaystackTransaction({
             'bank_transfer',
           ],
 
-          metadata,
+          metadata:
+            JSON.stringify(
+              metadata ?? {},
+            ),
         }),
       },
     )
@@ -91,9 +125,14 @@ export async function initializePaystackTransaction({
     !data.status ||
     !data.data
   ) {
+    console.error(
+      'Paystack initialization failed:',
+      data,
+    )
+
     throw new Error(
       data.message ||
-        'Unable to initialize Paystack transaction.',
+        'Unable to initialize payment.',
     )
   }
 
@@ -109,26 +148,9 @@ export async function initializePaystackTransaction({
   }
 }
 
-
-type  PaystackVerifyTransactionResponse= {
-  status: boolean
-  message: string
-  data?: {
-    id: number
-    domain: string
-    status: string
-    reference: string
-    amount: number
-    currency: string
-
-    customer: {
-      email: string
-    }
-
-    paid_at: string | null
-    channel: string | null
-  }
-}
+/* ============================================================
+   VERIFY TRANSACTION
+============================================================ */
 
 export async function verifyPaystackTransaction(
   reference: string,
@@ -153,9 +175,6 @@ export async function verifyPaystackTransaction(
         headers: {
           Authorization:
             `Bearer ${secretKey}`,
-
-          'Content-Type':
-            'application/json',
         },
 
         cache: 'no-store',
@@ -163,19 +182,23 @@ export async function verifyPaystackTransaction(
     )
 
   const data =
-    (await response.json()) as PaystackVerifyTransactionResponse
+    (await response.json()) as PaystackVerifyResponse
 
   if (
     !response.ok ||
     !data.status ||
     !data.data
   ) {
+    console.error(
+      'Paystack verification failed:',
+      data,
+    )
+
     throw new Error(
       data.message ||
-        'Unable to verify Paystack transaction.',
+        'Unable to verify payment.',
     )
   }
 
   return data.data
 }
-

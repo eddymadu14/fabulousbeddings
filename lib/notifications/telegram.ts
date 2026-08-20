@@ -1,12 +1,12 @@
 
 import 'server-only'
 
-
 type TelegramOrder = {
   id: number
 
   customerName: string
   customerEmail: string
+
   customerPhone:
     | string
     | null
@@ -23,6 +23,12 @@ type TelegramOrder = {
   paymentMethod: string
 }
 
+type TelegramPaymentOptions = {
+  paymentStatus?:
+    | 'pending'
+    | 'paid'
+    | 'failed'
+}
 
 function money(
   value: number,
@@ -37,9 +43,9 @@ function money(
   ).format(value)
 }
 
-
 export async function sendTelegramOrderAlert(
   order: TelegramOrder,
+  options: TelegramPaymentOptions = {},
 ) {
   const token =
     process.env
@@ -49,15 +55,37 @@ export async function sendTelegramOrderAlert(
     process.env
       .TELEGRAM_CHAT_ID
 
-  if (!token || !chatId) {
+  if (
+    !token ||
+    !chatId
+  ) {
     throw new Error(
       'Telegram environment variables are not configured.',
     )
   }
 
+  const paymentStatus =
+    options.paymentStatus ??
+    'pending'
+
+  const paymentLabel =
+    paymentStatus === 'paid'
+      ? 'PAID'
+      : paymentStatus ===
+          'failed'
+        ? 'FAILED'
+        : 'PENDING'
+
+  const paymentWarning =
+    paymentStatus === 'paid'
+      ? '✅ Payment confirmed'
+      : order.paymentMethod ===
+          'pay_on_delivery'
+        ? '⚠️ Pay on Delivery'
+        : '⏳ Payment pending'
 
   const message = `
-🛍️ *NEW ORDER*
+🛍️ *ORDER*
 
 *Order:* #${order.id}
 
@@ -76,17 +104,16 @@ ${order.shippingCity}, ${order.shippingState}
 
 💳 ${order.paymentMethod}
 
-*Payment:* Pending
+*Payment:* ${paymentLabel}
+
+${paymentWarning}
 
 *Subtotal:* ${money(order.subtotal)}
 
 *Delivery:* ${money(order.deliveryFee)}
 
 *TOTAL:* ${money(order.total)}
-
-⚠️ Pay on Delivery
 `.trim()
-
 
   const response =
     await fetch(
@@ -112,10 +139,8 @@ ${order.shippingCity}, ${order.shippingState}
       },
     )
 
-
   const data =
     await response.json()
-
 
   if (
     !response.ok ||
@@ -126,7 +151,6 @@ ${order.shippingCity}, ${order.shippingState}
         'Telegram notification failed.',
     )
   }
-
 
   return data
 }

@@ -1,7 +1,7 @@
 
 import 'server-only'
 
-//import { Resend } from 'resend'
+/*import { Resend } from 'resend'
 
 
 const resend = new Resend(
@@ -432,4 +432,4 @@ export async function sendOwnerOrderEmail(
       `,
     ),
   })
-}
+}*/
