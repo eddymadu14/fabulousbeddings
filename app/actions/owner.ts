@@ -402,7 +402,7 @@ db
     count: sql<number>`count(*)`,
   })
   .from(orders)
-  .where(eq(orders.status, 'fulfilled')),
+  .where(eq(orders.orderStatus, 'fulfilled')),
 
 db
   .select({
