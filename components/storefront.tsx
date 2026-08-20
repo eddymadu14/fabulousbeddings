@@ -2807,72 +2807,94 @@ const total =
   subtotal + delivery
 
 
-  const handleSubmit = async (
-    event: React.FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault()
 
-    setFormError('')
 
-    if (
-      !checkout.email ||
-      !checkout.firstName ||
-      !checkout.lastName ||
-      !checkout.address ||
-      !checkout.city ||
-      !checkout.state ||
-      !checkout.phone
-    ) {
-      setFormError(
-        'Please complete all required fields.',
-      )
-      return
-    }
+const handleSubmit = async (
+  event: React.FormEvent<HTMLFormElement>,
+) => {
+  event.preventDefault()
 
-    setIsSubmitting(true)
+  setFormError('')
 
-    try {
-   
-      
-const checkoutPayload = {
-  customer: checkout,
+  if (
+    !checkout.email ||
+    !checkout.firstName ||
+    !checkout.lastName ||
+    !checkout.address ||
+    !checkout.city ||
+    !checkout.state ||
+    !checkout.phone
+  ) {
+    setFormError(
+      'Please complete all required fields.',
+    )
 
-  delivery: {
-    method: deliveryMethod,
-    fee: delivery,
-  },
-
-  payment: {
-    method: paymentMethod,
-  },
-
-  subtotal,
-  total,
-}
-      
-console.log(
-  'Checkout payload',
-  checkoutPayload,
-)
-      console.log(
-        'Checkout information:',
-        checkout,
-      )
-
-      setPlaced(true)
-    } catch (error) {
-      console.error(
-        'Checkout submission failed',
-        error,
-      )
-
-      setFormError(
-        'Something went wrong. Please try again.',
-      )
-    } finally {
-      setIsSubmitting(false)
-    }
+    return
   }
+
+  setIsSubmitting(true)
+
+  try {
+    const response =
+      await fetch(
+        '/api/orders',
+        {
+          method: 'POST',
+
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+
+          body: JSON.stringify({
+            customer: checkout,
+
+            delivery: {
+              method:
+                deliveryMethod,
+
+              fee: delivery,
+            },
+
+            payment: {
+              method:
+                paymentMethod,
+            },
+          }),
+        },
+      )
+
+    const data =
+      await response.json()
+
+    if (!response.ok) {
+      throw new Error(
+        data.error ||
+          'Unable to create your order.',
+      )
+    }
+
+    console.log(
+      'Order created:',
+      data.order,
+    )
+
+    setPlaced(true)
+  } catch (error) {
+    console.error(
+      'Checkout submission failed:',
+      error,
+    )
+
+    setFormError(
+      error instanceof Error
+        ? error.message
+        : 'Something went wrong. Please try again.',
+    )
+  } finally {
+    setIsSubmitting(false)
+  }
+}
 
   if (placed) {
     return (

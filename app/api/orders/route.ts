@@ -1,110 +1,313 @@
 
+import { cookies } from 'next/headers'
+import { headers } from 'next/headers'
 import { NextResponse } from 'next/server'
-import { db } from '@/lib/db'
+
 import {
-  orders,
+  and,
+  eq,
+  inArray,
+} from 'drizzle-orm'
+
+import { auth } from '@/lib/auth'
+import { db } from '@/lib/db'
+
+import {
+  cartItems,
+  carts,
   orderItems,
-  products,
+  orders,
   productVariants,
+  products,
 } from '@/lib/db/schema'
-import { getCart } from '@/lib/cart'
-import { eq, inArray } from 'drizzle-orm'
+
+import {
+  getOrCreateVisitor,
+  VISITOR_COOKIE,
+} from '@/lib/visitor'
+
+import {
+  getCartItems,
+  getOrCreateCart,
+} from '@/lib/cart'
+
+
+/* ============================================================
+   TYPES
+============================================================ */
+
+type CheckoutCustomer = {
+  email: string
+  firstName: string
+  lastName: string
+  phone: string
+  address: string
+  city: string
+  state: string
+}
+
+type CreateOrderBody = {
+  customer: CheckoutCustomer
+
+  delivery: {
+    method: string
+    fee: number
+  }
+
+  payment: {
+    method:
+      | 'pay_on_delivery'
+      | 'card_bank'
+  }
+}
+
+
+/* ============================================================
+   CART OWNER
+============================================================ */
+
+async function getCartOwner() {
+  const session =
+    await auth.api.getSession({
+      headers: await headers(),
+    })
+
+  if (session?.user) {
+    return {
+      userId: session.user.id,
+    }
+  }
+
+  const cookieStore =
+    await cookies()
+
+  const visitorId =
+    cookieStore.get(
+      VISITOR_COOKIE,
+    )?.value
+
+  const visitor =
+    await getOrCreateVisitor(
+      visitorId,
+    )
+
+  return {
+    visitorId: visitor.id,
+  }
+}
+
+
+/* ============================================================
+   CUSTOMER VALIDATION
+============================================================ */
+
+function isValidCustomer(
+  customer: unknown,
+): customer is CheckoutCustomer {
+  if (
+    !customer ||
+    typeof customer !== 'object'
+  ) {
+    return false
+  }
+
+  const value =
+    customer as Record<
+      string,
+      unknown
+    >
+
+  return (
+    typeof value.email === 'string' &&
+    value.email.trim().length > 0 &&
+
+    typeof value.firstName === 'string' &&
+    value.firstName.trim().length > 0 &&
+
+    typeof value.lastName === 'string' &&
+    value.lastName.trim().length > 0 &&
+
+    typeof value.phone === 'string' &&
+    value.phone.trim().length > 0 &&
+
+    typeof value.address === 'string' &&
+    value.address.trim().length > 0 &&
+
+    typeof value.city === 'string' &&
+    value.city.trim().length > 0 &&
+
+    typeof value.state === 'string' &&
+    value.state.trim().length > 0
+  )
+}
+
+
+/* ============================================================
+   POST /api/orders
+============================================================ */
 
 export async function POST(
   request: Request,
 ) {
   try {
-    const body = await request.json()
+    const body =
+      (await request.json()) as CreateOrderBody
 
     const {
       customer,
-      deliveryMethod,
-      deliveryFee,
-      paymentMethod,
+      delivery,
+      payment,
     } = body
 
+
+    /* --------------------------------------------------------
+       Validate customer
+    -------------------------------------------------------- */
+
     if (
-      !customer?.email ||
-      !customer?.firstName ||
-      !customer?.lastName ||
-      !customer?.phone ||
-      !customer?.address ||
-      !customer?.city ||
-      !customer?.state
+      !isValidCustomer(
+        customer,
+      )
     ) {
       return NextResponse.json(
         {
           error:
-            'Complete customer information is required.',
+            'Please complete all customer information.',
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       )
     }
 
+
+    /* --------------------------------------------------------
+       Validate delivery
+    -------------------------------------------------------- */
+
     if (
-      !['pay_on_delivery', 'card_bank'].includes(
-        paymentMethod,
-      )
+      !delivery ||
+      typeof delivery.method !==
+        'string'
     ) {
       return NextResponse.json(
         {
-          error: 'Invalid payment method.',
+          error:
+            'A delivery method is required.',
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       )
     }
 
-    if (!deliveryMethod) {
+
+    /* --------------------------------------------------------
+       Validate payment
+    -------------------------------------------------------- */
+
+    if (
+      payment?.method !==
+        'pay_on_delivery' &&
+      payment?.method !==
+        'card_bank'
+    ) {
       return NextResponse.json(
         {
           error:
-            'Delivery method is required.',
+            'Invalid payment method.',
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       )
     }
 
-    /*
-     * IMPORTANT:
-     * Read the cart from the server.
-     * Never trust prices or totals
-     * sent by the browser.
-     */
-    const cart = await getCart()
 
-    if (!cart || cart.items.length === 0) {
+    /* --------------------------------------------------------
+       Identify shopper
+    -------------------------------------------------------- */
+
+    const owner =
+      await getCartOwner()
+
+
+    /* --------------------------------------------------------
+       Get server-side cart
+    -------------------------------------------------------- */
+
+    const cart =
+      await getOrCreateCart(
+        owner,
+      )
+
+    const items =
+      await getCartItems(
+        cart.id,
+      )
+
+    if (items.length === 0) {
       return NextResponse.json(
         {
-          error: 'Your cart is empty.',
+          error:
+            'Your cart is empty.',
         },
-        { status: 400 },
+        {
+          status: 400,
+        },
       )
     }
 
-    const productIds = cart.items.map(
-      (item) => item.productId,
-    )
+
+    /* --------------------------------------------------------
+       Load products
+    -------------------------------------------------------- */
+
+    const productIds =
+      Array.from(
+        new Set(
+          items.map(
+            (item) =>
+              item.productId,
+          ),
+        ),
+      )
 
     const dbProducts =
-      await db.query.products.findMany({
-        where: inArray(
-          products.id,
-          productIds,
-        ),
-        with: {
-          variants: true,
-        },
-      })
+      await db
+        .select()
+        .from(products)
+        .where(
+          inArray(
+            products.id,
+            productIds,
+          ),
+        )
+
+
+    /* --------------------------------------------------------
+       Recalculate subtotal
+       SERVER SIDE
+    -------------------------------------------------------- */
 
     let subtotal = 0
 
-    const itemRows = []
+    const orderItemRows: {
+      productId: number
+      variantId: number | null
+      productName: string
+      variantName: string | null
+      unitPrice: number
+      quantity: number
+    }[] = []
 
-    for (const item of cart.items) {
+
+    for (const item of items) {
       const product =
         dbProducts.find(
-          (product) =>
-            product.id === item.productId,
+          (candidate) =>
+            candidate.id ===
+            item.productId,
         )
 
       if (!product) {
@@ -113,21 +316,50 @@ export async function POST(
             error:
               `Product ${item.productId} no longer exists.`,
           },
-          { status: 400 },
+          {
+            status: 400,
+          },
         )
       }
 
-      let unitPrice = product.price
-      let variantName: string | null =
-        null
 
-      if (item.variantId != null) {
+      let unitPrice =
+        product.price
+
+      let variantName:
+        | string
+        | null = null
+
+
+      /* ------------------------------------------------------
+         Variant
+      ------------------------------------------------------ */
+
+      if (
+        item.variantId !== null
+      ) {
+        const variantRows =
+          await db
+            .select()
+            .from(
+              productVariants,
+            )
+            .where(
+              and(
+                eq(
+                  productVariants.id,
+                  item.variantId,
+                ),
+                eq(
+                  productVariants.productId,
+                  product.id,
+                ),
+              ),
+            )
+            .limit(1)
+
         const variant =
-          product.variants.find(
-            (variant) =>
-              variant.id ===
-              item.variantId,
-          )
+          variantRows[0]
 
         if (!variant) {
           return NextResponse.json(
@@ -135,133 +367,310 @@ export async function POST(
               error:
                 `Selected variant for ${product.name} no longer exists.`,
             },
-            { status: 400 },
+            {
+              status: 400,
+            },
           )
         }
 
-        unitPrice = variant.price
+        if (!variant.active) {
+          return NextResponse.json(
+            {
+              error:
+                `Selected variant for ${product.name} is unavailable.`,
+            },
+            {
+              status: 400,
+            },
+          )
+        }
+
+        unitPrice =
+          variant.price
+
         variantName =
           variant.name
       }
 
+
+      /* ------------------------------------------------------
+         Quantity
+      ------------------------------------------------------ */
+
+      if (
+        !Number.isInteger(
+          item.quantity,
+        ) ||
+        item.quantity <= 0
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              `Invalid quantity for ${product.name}.`,
+          },
+          {
+            status: 400,
+          },
+        )
+      }
+
+
       const lineTotal =
-        unitPrice * item.quantity
+        unitPrice *
+        item.quantity
 
-      subtotal += lineTotal
+      subtotal +=
+        lineTotal
 
-      itemRows.push({
-        productId: product.id,
+
+      orderItemRows.push({
+        productId:
+          product.id,
+
         variantId:
-          item.variantId ?? null,
-        productName: product.name,
+          item.variantId,
+
+        productName:
+          product.name,
+
         variantName,
+
         unitPrice,
-        quantity: item.quantity,
+
+        quantity:
+          item.quantity,
       })
     }
 
-    /*
-     * Server-side delivery calculation.
-     */
+
+    /* --------------------------------------------------------
+       Delivery
+    -------------------------------------------------------- */
+
     const FREE_DELIVERY_THRESHOLD =
       150000
 
     const STANDARD_DELIVERY_FEE =
       5000
 
-    const calculatedDelivery =
+    const calculatedDeliveryFee =
       subtotal >=
       FREE_DELIVERY_THRESHOLD
         ? 0
         : STANDARD_DELIVERY_FEE
 
-    const total =
-      subtotal + calculatedDelivery
 
     /*
-     * Never trust deliveryFee from
-     * the browser.
+     * Browser sends delivery fee
+     * for display, but server decides
+     * what the real fee is.
      */
     if (
-      Number(deliveryFee) !==
-      calculatedDelivery
+      Number(delivery.fee) !==
+      calculatedDeliveryFee
     ) {
       return NextResponse.json(
         {
           error:
-            'Delivery price changed. Please refresh checkout.',
+            'Delivery fee has changed. Please refresh checkout.',
         },
-        { status: 409 },
+        {
+          status: 409,
+        },
       )
     }
 
-    const customerName =
-      `${customer.firstName} ${customer.lastName}`.trim()
+
+    const total =
+      subtotal +
+      calculatedDeliveryFee
+
+
+    /* --------------------------------------------------------
+       Payment state
+    -------------------------------------------------------- */
+
+    const isPayOnDelivery =
+      payment.method ===
+      'pay_on_delivery'
 
     const paymentStatus =
-      paymentMethod ===
-      'pay_on_delivery'
+      isPayOnDelivery
         ? 'pending'
         : 'pending'
 
     const orderStatus =
-      paymentMethod ===
-      'pay_on_delivery'
+      isPayOnDelivery
         ? 'confirmed'
         : 'pending'
+
+
+    /* --------------------------------------------------------
+       Create order + items + clear cart
+       AS ONE TRANSACTION
+    -------------------------------------------------------- */
 
     const result =
       await db.transaction(
         async (tx) => {
-          const [order] =
-            await tx
-              .insert(orders)
-              .values({
-                customerName,
-                customerEmail:
-                  customer.email,
-                customerPhone:
-                  customer.phone,
 
-                shippingAddress:
-                  customer.address,
-                shippingCity:
-                  customer.city,
-                shippingState:
-                  customer.state,
+          const [
+            order,
+          ] = await tx
+            .insert(orders)
+            .values({
+              userId:
+                owner.userId ??
+                null,
 
-                subtotal,
-                deliveryFee:
-                  calculatedDelivery,
-                total,
+              visitorId:
+                owner.visitorId ??
+                null,
 
-                deliveryMethod,
-                paymentMethod,
+              customerName:
+                `${customer.firstName.trim()} ${customer.lastName.trim()}`,
 
-                paymentStatus,
-                orderStatus,
-              })
-              .returning()
+              customerEmail:
+                customer.email.trim(),
+
+              customerPhone:
+                customer.phone.trim(),
+
+              shippingAddress:
+                customer.address.trim(),
+
+              shippingCity:
+                customer.city.trim(),
+
+              shippingState:
+                customer.state.trim(),
+
+              subtotal,
+
+              deliveryFee:
+                calculatedDeliveryFee,
+
+              total,
+
+              deliveryMethod:
+                delivery.method,
+
+              paymentMethod:
+                payment.method,
+
+              paymentStatus,
+
+              orderStatus,
+
+              paymentReference:
+                null,
+            })
+            .returning()
+
 
           await tx
             .insert(orderItems)
             .values(
-              itemRows.map(
+              orderItemRows.map(
                 (item) => ({
-                  ...item,
-                  orderId: order.id,
+                  orderId:
+                    order.id,
+
+                  productId:
+                    item.productId,
+
+                  variantId:
+                    item.variantId,
+
+                  productName:
+                    item.productName,
+
+                  variantName:
+                    item.variantName,
+
+                  unitPrice:
+                    item.unitPrice,
+
+                  quantity:
+                    item.quantity,
                 }),
               ),
             )
+
+
+          /*
+           * Clear ONLY this customer's cart.
+           */
+          await tx
+            .delete(cartItems)
+            .where(
+              eq(
+                cartItems.cartId,
+                cart.id,
+              ),
+            )
+
+
+          await tx
+            .update(carts)
+            .set({
+              updatedAt:
+                new Date(),
+            })
+            .where(
+              eq(
+                carts.id,
+                cart.id,
+              ),
+            )
+
 
           return order
         },
       )
 
-    return NextResponse.json({
-      success: true,
-      order: result,
-    })
+
+    return NextResponse.json(
+      {
+        success: true,
+
+        order: {
+          id:
+            result.id,
+
+          customerName:
+            result.customerName,
+
+          customerEmail:
+            result.customerEmail,
+
+          subtotal:
+            result.subtotal,
+
+          deliveryFee:
+            result.deliveryFee,
+
+          total:
+            result.total,
+
+          deliveryMethod:
+            result.deliveryMethod,
+
+          paymentMethod:
+            result.paymentMethod,
+
+          paymentStatus:
+            result.paymentStatus,
+
+          orderStatus:
+            result.orderStatus,
+        },
+      },
+      {
+        status: 201,
+      },
+    )
+
   } catch (error) {
     console.error(
       'Create order failed:',
@@ -273,7 +682,9 @@ export async function POST(
         error:
           'Unable to create your order.',
       },
-      { status: 500 },
+      {
+        status: 500,
+      },
     )
   }
 }
