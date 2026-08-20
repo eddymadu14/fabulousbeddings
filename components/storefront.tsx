@@ -2767,6 +2767,20 @@ export function CheckoutPage() {
 const [deliveryMethod, setDeliveryMethod] =
   useState<'standard'>('standard')
 
+  
+const [
+  placedOrder,
+  setPlacedOrder,
+] = useState<{
+  id: number
+  total: number
+} | null>(null)
+
+const [
+  receiptSent,
+  setReceiptSent,
+] = useState(false)
+
 const [paymentMethod, setPaymentMethod] =
   useState<'pay_on_delivery' | 'card_bank'>(
     'pay_on_delivery',
@@ -2809,6 +2823,7 @@ const total =
 
 
 
+
 const handleSubmit = async (
   event: React.FormEvent<HTMLFormElement>,
 ) => {
@@ -2817,13 +2832,13 @@ const handleSubmit = async (
   setFormError('')
 
   if (
-    !checkout.email ||
     !checkout.firstName ||
     !checkout.lastName ||
+    !checkout.email ||
+    !checkout.phone ||
     !checkout.address ||
     !checkout.city ||
-    !checkout.state ||
-    !checkout.phone
+    !checkout.state
   ) {
     setFormError(
       'Please complete all required fields.',
@@ -2832,7 +2847,21 @@ const handleSubmit = async (
     return
   }
 
+
+  if (
+    paymentMethod !==
+    'pay_on_delivery'
+  ) {
+    setFormError(
+      'Online payment is not available yet.',
+    )
+
+    return
+  }
+
+
   setIsSubmitting(true)
+
 
   try {
     const response =
@@ -2846,59 +2875,158 @@ const handleSubmit = async (
               'application/json',
           },
 
-          body: JSON.stringify({
-            customer: checkout,
+          credentials:
+            'include',
 
-            delivery: {
-              method:
-                deliveryMethod,
+          body:
+            JSON.stringify({
+              customer: {
+                firstName:
+                  checkout.firstName,
 
-              fee: delivery,
-            },
+                lastName:
+                  checkout.lastName,
 
-            payment: {
-              method:
-                paymentMethod,
-            },
-          }),
+                email:
+                  checkout.email,
+
+                phone:
+                  checkout.phone,
+
+                address:
+                  checkout.address,
+
+                city:
+                  checkout.city,
+
+                state:
+                  checkout.state,
+              },
+
+              delivery: {
+                method:
+                  deliveryMethod,
+
+                fee:
+                  delivery,
+              },
+
+              payment: {
+                method:
+                  'pay_on_delivery',
+              },
+            }),
         },
       )
+
 
     const data =
       await response.json()
 
+
     if (!response.ok) {
       throw new Error(
         data.error ||
-          'Unable to create your order.',
+          'Unable to place order.',
       )
     }
 
-    console.log(
-      'Order created:',
-      data.order,
+
+    setPlacedOrder({
+      id:
+        data.order.id,
+
+      total:
+        data.order.total,
+    })
+
+
+    setReceiptSent(
+      Boolean(
+        data.notifications
+          ?.customerEmailSent,
+      ),
     )
 
+
     setPlaced(true)
+
   } catch (error) {
+
     console.error(
-      'Checkout submission failed:',
+      'Checkout failed:',
       error,
     )
 
     setFormError(
       error instanceof Error
         ? error.message
-        : 'Something went wrong. Please try again.',
+        : 'Unable to place your order.',
     )
+
   } finally {
+
     setIsSubmitting(false)
   }
 }
 
   if (placed) {
     return (
-      <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-5 py-20 text-center">
+
+      
+  <div className="mx-auto max-w-xl px-5 py-20 text-center">
+
+    <div className="mx-auto flex size-14 items-center justify-center rounded-full bg-primary text-primary-foreground">
+      <Check className="size-6" />
+    </div>
+
+    <p className="mt-8 font-mono text-[10px] uppercase tracking-[0.22em] text-accent-foreground">
+      Order received
+    </p>
+
+    <h1 className="mt-4 font-serif text-5xl">
+      Thank you.
+    </h1>
+
+    {placedOrder && (
+      <p className="mt-4 text-sm text-muted-foreground">
+        Order #{placedOrder.id}
+      </p>
+    )}
+
+    <p className="mx-auto mt-6 max-w-md text-sm leading-7 text-muted-foreground">
+      Your Pay on Delivery order has
+      been received successfully and on its way to becoming part of your home.
+    </p>
+
+    
+
+    {receiptSent ? (
+      <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-muted-foreground">
+        Your receipt has been sent to{' '}
+        <strong>
+          {checkout.email}
+        </strong>.
+      </p>
+    ) : (
+      <p className="mx-auto mt-3 max-w-md text-sm leading-7 text-muted-foreground">
+        Your order is confirmed.
+        We will contact you with
+        delivery details.
+      </p>
+    )}
+
+    <Link
+      href="/shop"
+      className="mt-10 inline-flex bg-primary px-8 py-4 text-xs uppercase tracking-[0.15em] text-primary-foreground"
+    >
+      Continue shopping
+    </Link>
+
+  </div>
+
+    
+     /* <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-5 py-20 text-center">
         <div className="flex size-14 items-center justify-center rounded-full bg-accent">
           <Check className="size-6" />
         </div>
@@ -2920,7 +3048,7 @@ const handleSubmit = async (
         >
           Continue shopping
         </Link>
-      </div>
+      </div> */
     )
   }
 

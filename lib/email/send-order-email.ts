@@ -1,13 +1,6 @@
 
 import 'server-only'
 
-//import { Resend } from 'resend'
-
-
-const resend = new Resend(
-  process.env.RESEND_API_KEY,
-)
-
 
 type OrderEmailItem = {
   productName: string
@@ -17,7 +10,7 @@ type OrderEmailItem = {
 }
 
 
-type OrderEmailData = {
+export type OrderEmailData = {
   id: number
 
   customerName: string
@@ -75,7 +68,12 @@ function itemsHtml(
     .map(
       (item) => `
         <tr>
-          <td style="padding:10px 0;border-bottom:1px solid #eee;">
+          <td
+            style="
+              padding:10px 0;
+              border-bottom:1px solid #eee;
+            "
+          >
             <strong>
               ${escapeHtml(
                 item.productName,
@@ -125,14 +123,16 @@ function itemsHtml(
 }
 
 
-function baseEmail(
+function buildOrderEmailHtml(
   data: OrderEmailData,
   heading: string,
   message: string,
 ) {
   return `
 <!DOCTYPE html>
+
 <html>
+
 <body
   style="
     margin:0;
@@ -171,6 +171,7 @@ function baseEmail(
   </span>
 </h1>
 
+
 <p
   style="
     color:#999;
@@ -180,6 +181,7 @@ function baseEmail(
 >
   ORDER #${data.id}
 </p>
+
 
 <h2
   style="
@@ -191,6 +193,7 @@ function baseEmail(
   ${heading}
 </h2>
 
+
 <p
   style="
     color:#666;
@@ -199,6 +202,7 @@ function baseEmail(
 >
   ${message}
 </p>
+
 
 <table
   width="100%"
@@ -209,8 +213,11 @@ function baseEmail(
     border-collapse:collapse;
   "
 >
+
 <thead>
+
 <tr>
+
 <th style="text-align:left;">
 Product
 </th>
@@ -222,13 +229,20 @@ Qty
 <th style="text-align:right;">
 Amount
 </th>
+
 </tr>
+
 </thead>
 
+
 <tbody>
+
 ${itemsHtml(data.items)}
+
 </tbody>
+
 </table>
+
 
 <div
   style="
@@ -245,6 +259,7 @@ ${money(data.subtotal)}
 </strong>
 </p>
 
+
 <p>
 Delivery:
 <strong>
@@ -258,6 +273,7 @@ ${
 </strong>
 </p>
 
+
 <h2
   style="
     font-family:Georgia,serif;
@@ -269,6 +285,7 @@ ${money(data.total)}
 </h2>
 
 </div>
+
 
 <div
   style="
@@ -332,48 +349,141 @@ ${escapeHtml(
 </div>
 
 </body>
+
 </html>
 `
+}
+
+
+async function sendBrevoEmail(
+  options: {
+    to: string
+    toName?: string
+    subject: string
+    html: string
+  },
+) {
+
+  const apiKey =
+    process.env.BREVO_API_KEY
+
+  const fromEmail =
+    process.env.BREVO_FROM_EMAIL
+
+  const fromName =
+    process.env.BREVO_FROM_NAME ??
+    'Fabulous Beddings'
+
+
+  if (!apiKey) {
+    throw new Error(
+      'BREVO_API_KEY is not configured.',
+    )
+  }
+
+
+  if (!fromEmail) {
+    throw new Error(
+      'BREVO_FROM_EMAIL is not configured.',
+    )
+  }
+
+
+  const response =
+    await fetch(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        method: 'POST',
+
+        headers: {
+          accept:
+            'application/json',
+
+          'api-key':
+            apiKey,
+
+          'content-type':
+            'application/json',
+        },
+
+        body:
+          JSON.stringify({
+            sender: {
+              name:
+                fromName,
+
+              email:
+                fromEmail,
+            },
+
+            to: [
+              {
+                email:
+                  options.to,
+
+                ...(options.toName
+                  ? {
+                      name:
+                        options.toName,
+                    }
+                  : {}),
+              },
+            ],
+
+            subject:
+              options.subject,
+
+            htmlContent:
+              options.html,
+
+            tags: [
+              'order',
+              'fabulous-beddings',
+            ],
+          }),
+      },
+    )
+
+
+  const data =
+    await response.json()
+
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+        'Brevo email failed.',
+    )
+  }
+
+
+  return data
 }
 
 
 export async function sendCustomerOrderEmail(
   data: OrderEmailData,
 ) {
-  if (
-    !process.env.RESEND_API_KEY
-  ) {
-    throw new Error(
-      'RESEND_API_KEY is not configured.',
-    )
-  }
-
-  if (
-    !process.env.RESEND_FROM_EMAIL
-  ) {
-    throw new Error(
-      'RESEND_FROM_EMAIL is not configured.',
-    )
-  }
-
-  return resend.emails.send({
-    from:
-      process.env
-        .RESEND_FROM_EMAIL,
-
+  return sendBrevoEmail({
     to:
       data.customerEmail,
+
+    toName:
+      data.customerName,
 
     subject:
       `Fabulous Beddings — Order #${data.id}`,
 
-    html: baseEmail(
-      data,
-      `Thank you, ${escapeHtml(
-        data.customerName,
-      )}.`,
-      'Your order has been received successfully. We will contact you with delivery details.',
-    ),
+    html:
+      buildOrderEmailHtml(
+        data,
+
+        `Thank you, ${escapeHtml(
+          data.customerName,
+        )}.`,
+
+        'Your order has been received successfully. We will contact you with delivery details.',
+      ),
   })
 }
 
@@ -381,55 +491,41 @@ export async function sendCustomerOrderEmail(
 export async function sendOwnerOrderEmail(
   data: OrderEmailData,
 ) {
-  if (
-    !process.env.RESEND_API_KEY
-  ) {
-    throw new Error(
-      'RESEND_API_KEY is not configured.',
-    )
-  }
 
-  if (
-    !process.env.RESEND_FROM_EMAIL
-  ) {
-    throw new Error(
-      'RESEND_FROM_EMAIL is not configured.',
-    )
-  }
+  const ownerEmail =
+    process.env.OWNER_EMAIL
 
-  if (
-    !process.env.OWNER_EMAIL
-  ) {
+
+  if (!ownerEmail) {
     throw new Error(
       'OWNER_EMAIL is not configured.',
     )
   }
 
-  return resend.emails.send({
-    from:
-      process.env
-        .RESEND_FROM_EMAIL,
 
+  return sendBrevoEmail({
     to:
-      process.env.OWNER_EMAIL,
+      ownerEmail,
 
     subject:
       `NEW ORDER #${data.id} — ${money(
         data.total,
       )}`,
 
-    html: baseEmail(
-      data,
-      'New order received',
-      `
-        A new Pay on Delivery order has
-        been placed by
-        <strong>
-          ${escapeHtml(
-            data.customerName,
-          )}
-        </strong>.
-      `,
-    ),
+    html:
+      buildOrderEmailHtml(
+        data,
+
+        'New order received',
+
+        `
+          A new order has been placed by
+          <strong>
+            ${escapeHtml(
+              data.customerName,
+            )}
+          </strong>.
+        `,
+      ),
   })
 }

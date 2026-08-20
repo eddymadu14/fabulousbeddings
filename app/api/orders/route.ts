@@ -31,6 +31,16 @@ import {
   getOrCreateCart,
 } from '@/lib/cart'
 
+import {
+  sendCustomerOrderEmail,
+  sendOwnerOrderEmail,
+} from '@/lib/email/send-order-email'
+
+import {
+  sendTelegramOrderAlert,
+} from '@/lib/notifications/telegram'
+
+
 
 /* ============================================================
    TYPES
@@ -501,7 +511,7 @@ export async function POST(
 
     const orderStatus =
       isPayOnDelivery
-        ? 'confirmed'
+        ? 'pending'
         : 'pending'
 
 
@@ -630,46 +640,144 @@ export async function POST(
       )
 
 
-    return NextResponse.json(
-      {
-        success: true,
-
-        order: {
-          id:
-            result.id,
-
-          customerName:
-            result.customerName,
-
-          customerEmail:
-            result.customerEmail,
-
-          subtotal:
-            result.subtotal,
-
-          deliveryFee:
-            result.deliveryFee,
-
-          total:
-            result.total,
-
-          deliveryMethod:
-            result.deliveryMethod,
-
-          paymentMethod:
-            result.paymentMethod,
-
-          paymentStatus:
-            result.paymentStatus,
-
-          orderStatus:
-            result.orderStatus,
-        },
-      },
-      {
-        status: 201,
-      },
+  
+const createdItems =
+  await db
+    .select()
+    .from(orderItems)
+    .where(
+      eq(
+        orderItems.orderId,
+        result.id,
+      ),
     )
+
+
+const emailData = {
+  id: result.id,
+
+  customerName:
+    result.customerName,
+
+  customerEmail:
+    result.customerEmail,
+
+  customerPhone:
+    result.customerPhone,
+
+  shippingAddress:
+    result.shippingAddress,
+
+  shippingCity:
+    result.shippingCity,
+
+  shippingState:
+    result.shippingState,
+
+  subtotal:
+    result.subtotal,
+
+  deliveryFee:
+    result.deliveryFee,
+
+  total:
+    result.total,
+
+  deliveryMethod:
+    result.deliveryMethod,
+
+  paymentMethod:
+    result.paymentMethod,
+
+  items:
+    createdItems.map(
+      (item) => ({
+        productName:
+          item.productName,
+
+        variantName:
+          item.variantName,
+
+        unitPrice:
+          item.unitPrice,
+
+        quantity:
+          item.quantity,
+      }),
+    ),
+}
+
+
+let customerEmailSent =
+  false
+
+try {
+  await sendCustomerOrderEmail(
+    emailData,
+  )
+
+  customerEmailSent =
+    true
+} catch (error) {
+  console.error(
+    'Customer order email failed:',
+    error,
+  )
+}
+
+
+let ownerEmailSent =
+  false
+
+try {
+  await sendOwnerOrderEmail(
+    emailData,
+  )
+
+  ownerEmailSent =
+    true
+} catch (error) {
+  console.error(
+    'Owner order email failed:',
+    error,
+  )
+}
+
+
+let telegramSent =
+  false
+
+try {
+  await sendTelegramOrderAlert(
+    emailData,
+  )
+
+  telegramSent =
+    true
+} catch (error) {
+  console.error(
+    'Telegram order alert failed:',
+    error,
+  )
+}
+
+
+return NextResponse.json(
+  {
+    success: true,
+
+    order: result,
+
+    notifications: {
+      customerEmailSent,
+      ownerEmailSent,
+      telegramSent,
+    },
+  },
+  {
+    status: 201,
+  },
+)
 
   } catch (error) {
     console.error(
