@@ -1,1300 +1,442 @@
-
-lib/payments/process-successful-payment.ts
-Whole file:
-import 'server-only'
-
-import { eq } from 'drizzle-orm'
-
-import { db } from '@/lib/db'
-
-import {
-  cartItems,
-  carts,
-  orderItems,
-  orders,
-} from '@/lib/db/schema'
-
-import {
-  sendCustomerOrderEmail,
-  sendOwnerOrderEmail,
-} from '@/lib/email/send-order-email'
-
-import {
-  sendTelegramOrderAlert,
-} from '@/lib/notifications/telegram'
-
-import {
-  verifyPaystackTransaction,
-} from '@/lib/paystack'
-
-export async function processSuccessfulPayment(
-  reference: string,
-) {
-  /*
-   * ----------------------------------------------------------
-   * Find order
-   * ----------------------------------------------------------
-   */
-
-  const orderRows =
-    await db
-      .select()
-      .from(orders)
-      .where(
-        eq(
-          orders.paymentReference,
-          reference,
-        ),
-      )
-      .limit(1)
-
-  const order =
-    orderRows[0]
-
-  if (!order) {
-    throw new Error(
-      'Order associated with this payment was not found.',
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Idempotency
-   * ----------------------------------------------------------
-   *
-   * If Paystack callback and webhook both arrive,
-   * don't process the same order twice.
-   */
-
-  if (
-    order.paymentStatus ===
-    'paid'
-  ) {
-    return {
-      order,
-      alreadyProcessed:
-        true,
-    }
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Verify directly with Paystack
-   * ----------------------------------------------------------
-   *
-   * Never trust the browser or webhook payload alone.
-   */
-
-  const transaction =
-    await verifyPaystackTransaction(
-      reference,
-    )
-
-  /*
-   * ----------------------------------------------------------
-   * Verify transaction status
-   * ----------------------------------------------------------
-   */
-
-  if (
-    transaction.status !==
-    'success'
-  ) {
-    throw new Error(
-      `Payment is not successful. Paystack status: ${transaction.status}`,
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Verify reference
-   * ----------------------------------------------------------
-   */
-
-  if (
-    transaction.reference !==
-    order.paymentReference
-  ) {
-    throw new Error(
-      'Payment reference does not match the order.',
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Verify currency
-   * ----------------------------------------------------------
-   */
-
-  if (
-    transaction.currency !==
-    'NGN'
-  ) {
-    throw new Error(
-      'Payment currency does not match the order currency.',
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Verify amount
-   * ----------------------------------------------------------
-   *
-   * Order total is Naira.
-   * Paystack amount is kobo.
-   */
-
-  const expectedAmount =
-    Math.round(
-      order.total * 100,
-    )
-
-  if (
-    transaction.amount !==
-    expectedAmount
-  ) {
-    throw new Error(
-      'Payment amount does not match the order total.',
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Load order items
-   * ----------------------------------------------------------
-   */
-
-  const createdItems =
-    await db
-      .select()
-      .from(orderItems)
-      .where(
-        eq(
-          orderItems.orderId,
-          order.id,
-        ),
-      )
-
-  /*
-   * ----------------------------------------------------------
-   * Mark order paid + clear cart
-   * ----------------------------------------------------------
-   */
-
-  const updatedOrder =
-    await db.transaction(
-      async (tx) => {
-        /*
-         * Re-check payment status inside
-         * the transaction.
-         *
-         * This protects against callback +
-         * webhook arriving nearly together.
-         */
-
-        const currentRows =
-          await tx
-            .select()
-            .from(orders)
-            .where(
-              eq(
-                orders.id,
-                order.id,
-              ),
-            )
-            .limit(1)
-
-        const currentOrder =
-          currentRows[0]
-
-        if (!currentOrder) {
-          throw new Error(
-            'Order no longer exists.',
-          )
-        }
-
-        if (
-          currentOrder.paymentStatus ===
-          'paid'
-        ) {
-          return currentOrder
-        }
-
-        /*
-         * Mark payment successful.
-         *
-         * Keep orderStatus pending because
-         * payment success does not mean the
-         * order has been delivered/fulfilled.
-         */
-
-        const [
-          paidOrder,
-        ] = await tx
-          .update(orders)
-          .set({
-            paymentStatus:
-              'paid',
-
-            orderStatus:
-              'pending',
-
-            updatedAt:
-              new Date(),
-          })
-          .where(
-            eq(
-              orders.id,
-              order.id,
-            ),
-          )
-          .returning()
-
-        /*
-         * ------------------------------------------------------
-         * Clear only this order owner's cart
-         * ------------------------------------------------------
-         */
-
-        if (
-          paidOrder.userId
-        ) {
-          const userCarts =
-            await tx
-              .select({
-                id: carts.id,
-              })
-              .from(carts)
-              .where(
-                eq(
-                  carts.userId,
-                  paidOrder.userId,
-                ),
-              )
-
-          for (
-            const cart of userCarts
-          ) {
-            await tx
-              .delete(cartItems)
-              .where(
-                eq(
-                  cartItems.cartId,
-                  cart.id,
-                ),
-              )
-
-            await tx
-              .update(carts)
-              .set({
-                updatedAt:
-                  new Date(),
-              })
-              .where(
-                eq(
-                  carts.id,
-                  cart.id,
-                ),
-              )
-          }
-        } else if (
-          paidOrder.visitorId
-        ) {
-          const visitorCarts =
-            await tx
-              .select({
-                id: carts.id,
-              })
-              .from(carts)
-              .where(
-                eq(
-                  carts.visitorId,
-                  paidOrder.visitorId,
-                ),
-              )
-
-          for (
-            const cart of visitorCarts
-          ) {
-            await tx
-              .delete(cartItems)
-              .where(
-                eq(
-                  cartItems.cartId,
-                  cart.id,
-                ),
-              )
-
-            await tx
-              .update(carts)
-              .set({
-                updatedAt:
-                  new Date(),
-              })
-              .where(
-                eq(
-                  carts.id,
-                  cart.id,
-                ),
-              )
-          }
-        }
-
-        return paidOrder
-      },
-    )
-
-  /*
-   * ----------------------------------------------------------
-   * Email / notification payload
-   * ----------------------------------------------------------
-   */
-
-  const emailData = {
-    id:
-      updatedOrder.id,
-
-    customerName:
-      updatedOrder.customerName,
-
-    customerEmail:
-      updatedOrder.customerEmail,
-
-    customerPhone:
-      updatedOrder.customerPhone,
-
-    shippingAddress:
-      updatedOrder.shippingAddress,
-
-    shippingCity:
-      updatedOrder.shippingCity,
-
-    shippingState:
-      updatedOrder.shippingState,
-
-    subtotal:
-      updatedOrder.subtotal,
-
-    deliveryFee:
-      updatedOrder.deliveryFee,
-
-    total:
-      updatedOrder.total,
-
-    deliveryMethod:
-      updatedOrder.deliveryMethod,
-
-    paymentMethod:
-      updatedOrder.paymentMethod,
-
-    items:
-      createdItems.map(
-        (item) => ({
-          productName:
-            item.productName,
-
-          variantName:
-            item.variantName,
-
-          unitPrice:
-            item.unitPrice,
-
-          quantity:
-            item.quantity,
-        }),
-      ),
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Customer receipt / confirmation
-   * ----------------------------------------------------------
-   */
-
-  let customerEmailSent =
-    false
-
-  try {
-    await sendCustomerOrderEmail(
-      emailData,
-    )
-
-    customerEmailSent =
-      true
-  } catch (error) {
-    console.error(
-      'Customer payment email failed:',
-      error,
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Owner notification
-   * ----------------------------------------------------------
-   */
-
-  let ownerEmailSent =
-    false
-
-  try {
-    await sendOwnerOrderEmail(
-      emailData,
-    )
-
-    ownerEmailSent =
-      true
-  } catch (error) {
-    console.error(
-      'Owner payment email failed:',
-      error,
-    )
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Telegram
-   * ----------------------------------------------------------
-   */
-
-  let telegramSent =
-    false
-
-  try {
-    await sendTelegramOrderAlert(
-      emailData,
-      {
-        paymentStatus:
-          'paid',
-      },
-    )
-
-    telegramSent =
-      true
-  } catch (error) {
-    console.error(
-      'Telegram payment alert failed:',
-      error,
-    )
-  }
-
-  return {
-    order:
-      updatedOrder,
-
-    alreadyProcessed:
-      false,
-
-    notifications: {
-      customerEmailSent,
-      ownerEmailSent,
-      telegramSent,
-    },
-  }
-}
-This reuses your existing Brevo customer/owner email functions and Telegram notification system instead of creating a second notification pipeline. �
+Yes. I inspected the latest main commit, and the frontend problem is very clear: your Card / Bank UI already exists, and your backend initialize endpoint is already ready, but CheckoutPage.handleSubmit() explicitly blocks online payment. �
 GitHub +1
-3. app/api/payments/verify/route.ts
-Create:
-app/api/payments/verify/route.ts
-Whole file:
-import {
-  cookies,
-} from 'next/headers'
-
-import {
-  headers,
-} from 'next/headers'
-
-import {
-  NextResponse,
-} from 'next/server'
-
-import {
-  and,
-  eq,
-} from 'drizzle-orm'
-
-import {
-  auth,
-} from '@/lib/auth'
-
-import {
-  db,
-} from '@/lib/db'
-
-import {
-  orders,
-} from '@/lib/db/schema'
-
-import {
-  getOrCreateVisitor,
-  VISITOR_COOKIE,
-} from '@/lib/visitor'
-
-import {
-  processSuccessfulPayment,
-} from '@/lib/payments/process-successful-payment'
-
-export async function POST(
-  request: Request,
+This is the offending code at components/storefront.tsx around lines 2673–2682:
+if (
+  paymentMethod !==
+  'pay_on_delivery'
 ) {
+  setFormError(
+    'Online payment is not available yet.',
+  )
+
+  return
+}
+So when the user selects Card / Bank, the frontend simply stops.
+Your backend already expects exactly the customer + delivery payload we're collecting and returns:
+payment.authorizationUrl
+payment.accessCode
+payment.reference
+from /api/payments/initialize. �
+GitHub +1
+The fix
+We only need to change the checkout submission pipeline.
+File
+components/storefront.tsx
+Location
+Inside:
+export function CheckoutPage()
+Replace the entire current handleSubmit function, from approximately:
+const handleSubmit = async (
+through its closing } immediately before:
+if (placed) {
+with this:
+const handleSubmit = async (
+  event: React.FormEvent<HTMLFormElement>,
+) => {
+  event.preventDefault()
+
+  setFormError('')
+
+  /*
+   * ----------------------------------------------------------
+   * CLIENT-SIDE VALIDATION
+   * ----------------------------------------------------------
+   */
+
+  if (
+    !checkout.firstName.trim() ||
+    !checkout.lastName.trim() ||
+    !checkout.email.trim() ||
+    !checkout.phone.trim() ||
+    !checkout.address.trim() ||
+    !checkout.city.trim() ||
+    !checkout.state.trim()
+  ) {
+    setFormError(
+      'Please complete all required fields.',
+    )
+
+    return
+  }
+
+  if (items.length === 0) {
+    setFormError(
+      'Your bag is empty.',
+    )
+
+    return
+  }
+
+  setIsSubmitting(true)
+
   try {
     /*
-     * ----------------------------------------------------------
-     * Get reference
-     * ----------------------------------------------------------
+     * ========================================================
+     * PAY ON DELIVERY
+     * ========================================================
+     *
+     * This continues using your existing
+     * /api/orders pipeline.
      */
 
-    const url =
-      new URL(
-        request.url,
-      )
+    if (
+      paymentMethod ===
+      'pay_on_delivery'
+    ) {
+      const response =
+        await fetch(
+          '/api/orders',
+          {
+            method: 'POST',
 
-    const reference =
-      url.searchParams.get(
-        'reference',
-      )
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
 
-    if (!reference) {
-      return NextResponse.json(
-        {
-          error:
-            'Payment reference is required.',
-        },
-        {
-          status: 400,
-        },
-      )
-    }
+            credentials:
+              'include',
 
-    /*
-     * ----------------------------------------------------------
-     * Identify current shopper
-     * ----------------------------------------------------------
-     */
+            body:
+              JSON.stringify({
+                customer: {
+                  firstName:
+                    checkout.firstName.trim(),
 
-    const session =
-      await auth.api.getSession({
-        headers:
-          await headers(),
+                  lastName:
+                    checkout.lastName.trim(),
+
+                  email:
+                    checkout.email.trim(),
+
+                  phone:
+                    checkout.phone.trim(),
+
+                  address:
+                    checkout.address.trim(),
+
+                  city:
+                    checkout.city.trim(),
+
+                  state:
+                    checkout.state.trim(),
+                },
+
+                delivery: {
+                  method:
+                    deliveryMethod,
+
+                  fee:
+                    delivery,
+                },
+
+                payment: {
+                  method:
+                    'pay_on_delivery',
+                },
+              }),
+          },
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Unable to place order.',
+        )
+      }
+
+      setPlacedOrder({
+        id:
+          data.order.id,
+
+        total:
+          data.order.total,
       })
 
-    let userId:
-      | string
-      | null = null
+      setReceiptSent(
+        Boolean(
+          data.notifications
+            ?.customerEmailSent,
+        ),
+      )
 
-    let visitorId:
-      | string
-      | null = null
+      setPlaced(true)
 
-    if (
-      session?.user
-    ) {
-      userId =
-        session.user.id
-    } else {
-      const cookieStore =
-        await cookies()
-
-      const existingVisitorId =
-        cookieStore.get(
-          VISITOR_COOKIE,
-        )?.value
-
-      const visitor =
-        await getOrCreateVisitor(
-          existingVisitorId,
-        )
-
-      visitorId =
-        visitor.id
+      return
     }
 
     /*
-     * ----------------------------------------------------------
-     * Confirm this order belongs to this shopper
-     * ----------------------------------------------------------
+     * ========================================================
+     * CARD / BANK
+     * ========================================================
+     *
+     * IMPORTANT:
+     *
+     * We DO NOT create the order from the browser.
+     *
+     * /api/payments/initialize:
+     *
+     *   validates cart
+     *   calculates total
+     *   creates pending order
+     *   creates order items
+     *   initializes Paystack
+     *   returns authorization URL
+     *
+     * The cart is intentionally NOT cleared here.
      */
-
-    const conditions = [
-      eq(
-        orders.paymentReference,
-        reference,
-      ),
-    ]
-
-    if (userId) {
-      conditions.push(
-        eq(
-          orders.userId,
-          userId,
-        ),
-      )
-    } else if (
-      visitorId
-    ) {
-      conditions.push(
-        eq(
-          orders.visitorId,
-          visitorId,
-        ),
-      )
-    }
-
-    const rows =
-      await db
-        .select({
-          id: orders.id,
-          paymentStatus:
-            orders.paymentStatus,
-        })
-        .from(orders)
-        .where(
-          and(
-            ...conditions,
-          ),
-        )
-        .limit(1)
 
     if (
-      !rows[0]
+      paymentMethod ===
+      'card_bank'
     ) {
-      return NextResponse.json(
-        {
-          error:
-            'Payment order could not be found.',
-        },
-        {
-          status: 404,
-        },
-      )
-    }
+      const response =
+        await fetch(
+          '/api/payments/initialize',
+          {
+            method: 'POST',
 
-    /*
-     * ----------------------------------------------------------
-     * Process payment
-     * ----------------------------------------------------------
-     */
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
 
-    const result =
-      await processSuccessfulPayment(
-        reference,
-      )
+            credentials:
+              'include',
 
-    return NextResponse.json({
-      success: true,
+            body:
+              JSON.stringify({
+                customer: {
+                  firstName:
+                    checkout.firstName.trim(),
 
-      order: {
-        id:
-          result.order.id,
+                  lastName:
+                    checkout.lastName.trim(),
 
-        paymentStatus:
-          result.order.paymentStatus,
+                  email:
+                    checkout.email.trim(),
 
-        orderStatus:
-          result.order.orderStatus,
-      },
+                  phone:
+                    checkout.phone.trim(),
 
-      alreadyProcessed:
-        result.alreadyProcessed,
-    })
-  } catch (error) {
-    console.error(
-      'Payment verification failed:',
-      error,
-    )
+                  address:
+                    checkout.address.trim(),
 
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Unable to verify payment.',
-      },
-      {
-        status: 500,
-      },
-    )
-  }
-}
-'use client'
+                  city:
+                    checkout.city.trim(),
 
-import {
-  Suspense,
-  useEffect,
-  useState,
-} from 'react'
+                  state:
+                    checkout.state.trim(),
+                },
 
-import {
-  useSearchParams,
-} from 'next/navigation'
+                delivery: {
+                  method:
+                    deliveryMethod,
 
-function PaymentCallbackContent() {
-  const searchParams =
-    useSearchParams()
+                  fee:
+                    delivery,
+                },
+              }),
+          },
+        )
 
-  const reference =
-    searchParams.get(
-      'reference',
-    )
+      const data =
+        await response.json()
 
-  const [
-    error,
-    setError,
-  ] = useState<
-    string | null
-  >(null)
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Unable to initialize payment.',
+        )
+      }
 
-  useEffect(() => {
-    if (!reference) {
-      setError(
-        'Payment reference is missing.',
+      const authorizationUrl =
+        data.payment
+          ?.authorizationUrl
+
+      if (
+        !authorizationUrl
+      ) {
+        throw new Error(
+          'Paystack did not return a payment URL.',
+        )
+      }
+
+      /*
+       * ------------------------------------------------------
+       * Redirect customer to Paystack
+       * ------------------------------------------------------
+       *
+       * DO NOT:
+       *
+       * setPlaced(true)
+       * clearCart()
+       * send receipt
+       *
+       * yet.
+       *
+       * Payment has only been initialized.
+       *
+       * Those happen after successful verification.
+       */
+
+      window.location.assign(
+        authorizationUrl,
       )
 
       return
     }
 
-    let cancelled =
-      false
-
-    async function verifyPayment() {
-      try {
-        const response =
-          await fetch(
-            `/api/payments/verify?reference=${encodeURIComponent(
-              reference,
-            )}`,
-            {
-              method:
-                'POST',
-
-              credentials:
-                'include',
-            },
-          )
-
-        const data =
-          await response.json()
-
-        if (
-          !response.ok
-        ) {
-          throw new Error(
-            data.error ||
-              'Payment verification failed.',
-          )
-        }
-
-        if (
-          cancelled
-        ) {
-          return
-        }
-
-        window.location.href =
-          `/thank-you?order=${encodeURIComponent(
-            data.order.id,
-          )}`
-      } catch (error) {
-        if (
-          cancelled
-        ) {
-          return
-        }
-
-        setError(
-          error instanceof Error
-            ? error.message
-            : 'Payment verification failed.',
-        )
-      }
-    }
-
-    verifyPayment()
-
-    return () => {
-      cancelled = true
-    }
-  }, [reference])
-
-  if (error) {
-    return (
-      <main className="flex min-h-screen items-center justify-center px-6">
-        <div className="max-w-md text-center">
-          <h1 className="font-serif text-4xl">
-            Payment could not be confirmed
-          </h1>
-
-          <p className="mt-4 text-sm leading-7 text-muted-foreground">
-            {error}
-          </p>
-        </div>
-      </main>
-    )
-  }
-
-  return (
-    <main className="flex min-h-screen items-center justify-center px-6">
-      <div className="text-center">
-        <div className="mx-auto mb-6 size-10 animate-spin rounded-full border-2 border-muted border-t-primary" />
-
-        <h1 className="font-serif text-3xl">
-          Confirming your payment...
-        </h1>
-
-        <p className="mt-3 text-sm leading-7 text-muted-foreground">
-          Please wait while we confirm your transaction.
-        </p>
-      </div>
-    </main>
-  )
-}
-
-export default function PaymentCallbackPage() {
-  return (
-    <Suspense
-      fallback={
-        <main className="flex min-h-screen items-center justify-center px-6">
-          <div className="text-center">
-            <div className="mx-auto mb-6 size-10 animate-spin rounded-full border-2 border-muted border-t-primary" />
-
-            <h1 className="font-serif text-3xl">
-              Confirming your payment...
-            </h1>
-          </div>
-        </main>
-      }
-    >
-      <PaymentCallbackContent />
-    </Suspense>
-  )
-}
-4. app/payment/callback/page.tsx
-Because this uses useSearchParams(), we're wrapping it in Suspense. That avoids the exact prerender error you encountered earlier.
-Create:
-app/payment/callback/page.tsx
-Whole file:
-TypeScript
-5. app/api/payments/webhook/route.ts
-This is Phase 9.
-Create:
-app/api/payments/webhook/route.ts
-Whole file:
-import crypto from 'crypto'
-
-import {
-  NextResponse,
-} from 'next/server'
-
-import {
-  processSuccessfulPayment,
-} from '@/lib/payments/process-successful-payment'
-
-function isValidPaystackSignature(
-  payload: string,
-  signature: string,
-) {
-  const secret =
-    process.env.PAYSTACK_SECRET_KEY
-
-  if (!secret) {
     throw new Error(
-      'PAYSTACK_SECRET_KEY is not configured.',
+      'Invalid payment method.',
     )
-  }
-
-  const hash =
-    crypto
-      .createHmac(
-        'sha512',
-        secret,
-      )
-      .update(payload)
-      .digest('hex')
-
-  /*
-   * Avoid timing attacks.
-   */
-
-  const expected =
-    Buffer.from(hash)
-
-  const received =
-    Buffer.from(signature)
-
-  if (
-    expected.length !==
-    received.length
-  ) {
-    return false
-  }
-
-  return crypto.timingSafeEqual(
-    expected,
-    received,
-  )
-}
-
-export async function POST(
-  request: Request,
-) {
-  try {
-    /*
-     * ----------------------------------------------------------
-     * Read raw body
-     * ----------------------------------------------------------
-     *
-     * IMPORTANT:
-     * We verify the exact raw payload.
-     */
-
-    const payload =
-      await request.text()
-
-    const signature =
-      request.headers.get(
-        'x-paystack-signature',
-      )
-
-    if (!signature) {
-      return new NextResponse(
-        'Unauthorized',
-        {
-          status: 401,
-        },
-      )
-    }
-
-    /*
-     * ----------------------------------------------------------
-     * Verify Paystack signature
-     * ----------------------------------------------------------
-     */
-
-    const valid =
-      isValidPaystackSignature(
-        payload,
-        signature,
-      )
-
-    if (!valid) {
-      return new NextResponse(
-        'Unauthorized',
-        {
-          status: 401,
-        },
-      )
-    }
-
-    /*
-     * ----------------------------------------------------------
-     * Parse event
-     * ----------------------------------------------------------
-     */
-
-    const event =
-      JSON.parse(payload) as {
-        event?: string
-
-        data?: {
-          reference?: string
-        }
-      }
-
-    /*
-     * ----------------------------------------------------------
-     * We only process successful charges
-     * ----------------------------------------------------------
-     */
-
-    if (
-      event.event !==
-      'charge.success'
-    ) {
-      return NextResponse.json({
-        received: true,
-        processed: false,
-      })
-    }
-
-    const reference =
-      event.data?.reference
-
-    if (!reference) {
-      return NextResponse.json(
-        {
-          error:
-            'Payment reference missing.',
-        },
-        {
-          status: 400,
-        },
-      )
-    }
-
-    /*
-     * ----------------------------------------------------------
-     * Process
-     * ----------------------------------------------------------
-     *
-     * processSuccessfulPayment() independently
-     * verifies the transaction against Paystack.
-     */
-
-    const result =
-      await processSuccessfulPayment(
-        reference,
-      )
-
-    return NextResponse.json({
-      received: true,
-
-      processed: true,
-
-      alreadyProcessed:
-        result.alreadyProcessed,
-
-      orderId:
-        result.order.id,
-    })
   } catch (error) {
     console.error(
-      'Paystack webhook failed:',
+      'Checkout failed:',
       error,
     )
 
-    return NextResponse.json(
-      {
-        error:
-          'Webhook processing failed.',
-      },
-      {
-        status: 500,
-      },
+    setFormError(
+      error instanceof Error
+        ? error.message
+        : 'Unable to process your order.',
     )
+
+    setIsSubmitting(false)
   }
 }
-Paystack sends the x-paystack-signature HMAC-SHA512 signature and recommends verifying it before processing the event. charge.success is the event we care about here. �
-Paystack
-6. Modify lib/notifications/telegram.ts
-Your existing Telegram function currently hard-codes:
-⚠️ Pay on Delivery
-so card/bank orders would produce a misleading alert. �
-GitHub
-Replace the whole file with:
-import 'server-only'
-
-type TelegramOrder = {
-  id: number
-
-  customerName: string
-  customerEmail: string
-
-  customerPhone:
-    | string
-    | null
-
-  shippingAddress: string
-  shippingCity: string
-  shippingState: string
-
-  subtotal: number
-  deliveryFee: number
-  total: number
-
-  deliveryMethod: string
-  paymentMethod: string
-}
-
-type TelegramPaymentOptions = {
-  paymentStatus?:
-    | 'pending'
-    | 'paid'
-    | 'failed'
-}
-
-function money(
-  value: number,
-) {
-  return new Intl.NumberFormat(
-    'en-NG',
-    {
-      style: 'currency',
-      currency: 'NGN',
-      maximumFractionDigits: 0,
-    },
-  ).format(value)
-}
-
-export async function sendTelegramOrderAlert(
-  order: TelegramOrder,
-  options: TelegramPaymentOptions = {},
-) {
-  const token =
-    process.env
-      .TELEGRAM_BOT_TOKEN
-
-  const chatId =
-    process.env
-      .TELEGRAM_CHAT_ID
-
-  if (
-    !token ||
-    !chatId
-  ) {
-    throw new Error(
-      'Telegram environment variables are not configured.',
-    )
-  }
-
-  const paymentStatus =
-    options.paymentStatus ??
-    'pending'
-
-  const paymentLabel =
-    paymentStatus === 'paid'
-      ? 'PAID'
-      : paymentStatus ===
-          'failed'
-        ? 'FAILED'
-        : 'PENDING'
-
-  const paymentWarning =
-    paymentStatus === 'paid'
-      ? '✅ Payment confirmed'
-      : order.paymentMethod ===
-          'pay_on_delivery'
-        ? '⚠️ Pay on Delivery'
-        : '⏳ Payment pending'
-
-  const message = `
-🛍️ *ORDER*
-
-*Order:* #${order.id}
-
-*Customer*
-${order.customerName}
-
-📧 ${order.customerEmail}
-
-📞 ${order.customerPhone ?? 'Not provided'}
-
-*Delivery*
-${order.shippingAddress}
-${order.shippingCity}, ${order.shippingState}
-
-🚚 ${order.deliveryMethod}
-
-💳 ${order.paymentMethod}
-
-*Payment:* ${paymentLabel}
-
-${paymentWarning}
-
-*Subtotal:* ${money(order.subtotal)}
-
-*Delivery:* ${money(order.deliveryFee)}
-
-*TOTAL:* ${money(order.total)}
-`.trim()
-
-  const response =
-    await fetch(
-      `https://api.telegram.org/bot${token}/sendMessage`,
-      {
-        method: 'POST',
-
-        headers: {
-          'Content-Type':
-            'application/json',
-        },
-
-        body: JSON.stringify({
-          chat_id:
-            chatId,
-
-          text:
-            message,
-
-          parse_mode:
-            'Markdown',
-        }),
-      },
-    )
-
-  const data =
-    await response.json()
-
-  if (
-    !response.ok ||
-    !data.ok
-  ) {
-    throw new Error(
-      data.description ||
-        'Telegram notification failed.',
-    )
-  }
-
-  return data
-}
-Your existing POD route will continue to work because the second argument is optional. So this:
-sendTelegramOrderAlert(
-  emailData,
-)
-still works.
-For successful Paystack payment we're explicitly using:
-sendTelegramOrderAlert(
-  emailData,
-  {
-    paymentStatus: 'paid',
-  },
-)
-7. Your existing initialize/route.ts
-Do not replace the whole 746-line file.
-Your latest implementation is already doing the correct Phase 7 flow:
-load cart
-↓
-validate products
-↓
-validate variants
-↓
-calculate subtotal
-↓
-calculate delivery
-↓
-create pending order
-↓
+What this changes
+Your checkout now behaves correctly:
+Pay on Delivery
+Submit
+ ↓
+POST /api/orders
+ ↓
+create order
+ ↓
 create order_items
-↓
-DO NOT clear cart
-↓
-initialize Paystack
-↓
-return authorization URL
-That's exactly what we want. �
+ ↓
+paymentStatus = pending
+ ↓
+clear cart
+ ↓
+Brevo
+ ↓
+owner email
+ ↓
+Telegram
+ ↓
+thank-you UI
+Your existing /api/orders pipeline already handles that flow. �
 GitHub
-One cleanup only:
-At the top you currently import:
-cartItems
-but that route doesn't actually need it.
-Change:
-import {
-  cartItems,
-  carts,
-  orderItems,
-  orders,
-  productVariants,
-  products,
-} from '@/lib/db/schema'
-to:
-import {
-  carts,
-  orderItems,
-  orders,
-  productVariants,
-  products,
-} from '@/lib/db/schema'
+Card / Bank
+Submit
+ ↓
+POST /api/payments/initialize
+ ↓
+server loads REAL cart
+ ↓
+server calculates REAL prices
+ ↓
+server calculates delivery
+ ↓
+creates order
+ ↓
+paymentStatus = pending
+ ↓
+creates order_items
+ ↓
+Paystack initialize
+ ↓
+returns authorizationUrl
+ ↓
+window.location.assign()
+ ↓
+PAYSTACK
+Your backend is already doing the server-side cart calculation and pending-order creation. �
+GitHub +1
+Then:
+PAYSTACK
+   ↓
+payment succeeds
+   ↓
+/payment/callback?reference=FB-...
+   ↓
+POST /api/payments/verify
+   ↓
+verify with Paystack
+   ↓
+validate reference
+validate amount
+validate currency
+   ↓
+paymentStatus = paid
+   ↓
+clear cart
+   ↓
+customer receipt
+   ↓
+owner email
+   ↓
+Telegram
+   ↓
+/thank-you
+One thing I would NOT change
+Do not clear the cart in CheckoutPage after this:
+window.location.assign(
+  authorizationUrl,
+)
+That's a critical mistake.
+At that moment the customer has not paid yet.
+Your backend's initialize route correctly leaves the cart untouched. �
+GitHub
+The cart should only disappear after:
+Paystack → successful payment → server verification
+Your existing Card / Bank UI is already correct
+You don't need to redesign this section:
+Payment
+
+○ Pay on delivery
+  Pay when your order is delivered.
+
+○ Card / Bank
+  Pay securely online.
+Your current code already switches:
+setPaymentMethod(
+  'card_bank',
+)
+and your submit button already changes to:
+Continue to payment
+when paymentMethod === 'card_bank'. �
+GitHub
+So don't touch that part.
+Then test
+After replacing handleSubmit:
+pnpm tsc --noEmit
+Then:
+pnpm run build
+Then test the actual flow:
+Add product.
+Go checkout.
+Fill customer details.
+Select Card / Bank.
+Click Continue to payment.
+Confirm you get redirected to Paystack.
+Complete a Paystack test transaction.
+Paystack redirects to:
+/payment/callback?reference=...
+Verification should happen.
+Only then should the cart be cleared and the thank-you page appear.
+The frontend was not missing a Paystack SDK. Your backend is redirect-based, so the correct integration is simply: POST your checkout data → receive authorizationUrl → redirect the browser to Paystack. Your current backend already exposes that URL. �
+GitHub
+
+
+
+
+
 8. One important issue with your current schema
 Your current orders.paymentReference is nullable and not unique. �
 GitHub

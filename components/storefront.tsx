@@ -2824,6 +2824,7 @@ const total =
 
 
 
+
 const handleSubmit = async (
   event: React.FormEvent<HTMLFormElement>,
 ) => {
@@ -2831,14 +2832,20 @@ const handleSubmit = async (
 
   setFormError('')
 
+  /*
+   * ----------------------------------------------------------
+   * CLIENT-SIDE VALIDATION
+   * ----------------------------------------------------------
+   */
+
   if (
-    !checkout.firstName ||
-    !checkout.lastName ||
-    !checkout.email ||
-    !checkout.phone ||
-    !checkout.address ||
-    !checkout.city ||
-    !checkout.state
+    !checkout.firstName.trim() ||
+    !checkout.lastName.trim() ||
+    !checkout.email.trim() ||
+    !checkout.phone.trim() ||
+    !checkout.address.trim() ||
+    !checkout.city.trim() ||
+    !checkout.state.trim()
   ) {
     setFormError(
       'Please complete all required fields.',
@@ -2847,112 +2854,241 @@ const handleSubmit = async (
     return
   }
 
-
-  if (
-    paymentMethod !==
-    'pay_on_delivery'
-  ) {
+  if (items.length === 0) {
     setFormError(
-      'Online payment is not available yet.',
+      'Your bag is empty.',
     )
 
     return
   }
 
-
   setIsSubmitting(true)
 
-
   try {
-    const response =
-      await fetch(
-        '/api/orders',
-        {
-          method: 'POST',
+    /*
+     * ========================================================
+     * PAY ON DELIVERY
+     * ========================================================
+     *
+     * This continues using your existing
+     * /api/orders pipeline.
+     */
 
-          headers: {
-            'Content-Type':
-              'application/json',
+    if (
+      paymentMethod ===
+      'pay_on_delivery'
+    ) {
+      const response =
+        await fetch(
+          '/api/orders',
+          {
+            method: 'POST',
+
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+
+            credentials:
+              'include',
+
+            body:
+              JSON.stringify({
+                customer: {
+                  firstName:
+                    checkout.firstName.trim(),
+
+                  lastName:
+                    checkout.lastName.trim(),
+
+                  email:
+                    checkout.email.trim(),
+
+                  phone:
+                    checkout.phone.trim(),
+
+                  address:
+                    checkout.address.trim(),
+
+                  city:
+                    checkout.city.trim(),
+
+                  state:
+                    checkout.state.trim(),
+                },
+
+                delivery: {
+                  method:
+                    deliveryMethod,
+
+                  fee:
+                    delivery,
+                },
+
+                payment: {
+                  method:
+                    'pay_on_delivery',
+                },
+              }),
           },
+        )
 
-          credentials:
-            'include',
+      const data =
+        await response.json()
 
-          body:
-            JSON.stringify({
-              customer: {
-                firstName:
-                  checkout.firstName,
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Unable to place order.',
+        )
+      }
 
-                lastName:
-                  checkout.lastName,
+      setPlacedOrder({
+        id:
+          data.order.id,
 
-                email:
-                  checkout.email,
+        total:
+          data.order.total,
+      })
 
-                phone:
-                  checkout.phone,
-
-                address:
-                  checkout.address,
-
-                city:
-                  checkout.city,
-
-                state:
-                  checkout.state,
-              },
-
-              delivery: {
-                method:
-                  deliveryMethod,
-
-                fee:
-                  delivery,
-              },
-
-              payment: {
-                method:
-                  'pay_on_delivery',
-              },
-            }),
-        },
+      setReceiptSent(
+        Boolean(
+          data.notifications
+            ?.customerEmailSent,
+        ),
       )
 
+      setPlaced(true)
 
-    const data =
-      await response.json()
-
-
-    if (!response.ok) {
-      throw new Error(
-        data.error ||
-          'Unable to place order.',
-      )
+      return
     }
 
+    /*
+     * ========================================================
+     * CARD / BANK
+     * ========================================================
+     *
+     * IMPORTANT:
+     *
+     * We DO NOT create the order from the browser.
+     *
+     * /api/payments/initialize:
+     *
+     *   validates cart
+     *   calculates total
+     *   creates pending order
+     *   creates order items
+     *   initializes Paystack
+     *   returns authorization URL
+     *
+     * The cart is intentionally NOT cleared here.
+     */
 
-    setPlacedOrder({
-      id:
-        data.order.id,
+    if (
+      paymentMethod ===
+      'card_bank'
+    ) {
+      const response =
+        await fetch(
+          '/api/payments/initialize',
+          {
+            method: 'POST',
 
-      total:
-        data.order.total,
-    })
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
 
+            credentials:
+              'include',
 
-    setReceiptSent(
-      Boolean(
-        data.notifications
-          ?.customerEmailSent,
-      ),
+            body:
+              JSON.stringify({
+                customer: {
+                  firstName:
+                    checkout.firstName.trim(),
+
+                  lastName:
+                    checkout.lastName.trim(),
+
+                  email:
+                    checkout.email.trim(),
+
+                  phone:
+                    checkout.phone.trim(),
+
+                  address:
+                    checkout.address.trim(),
+
+                  city:
+                    checkout.city.trim(),
+
+                  state:
+                    checkout.state.trim(),
+                },
+
+                delivery: {
+                  method:
+                    deliveryMethod,
+
+                  fee:
+                    delivery,
+                },
+              }),
+          },
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+            'Unable to initialize payment.',
+        )
+      }
+
+      const authorizationUrl =
+        data.payment
+          ?.authorizationUrl
+
+      if (
+        !authorizationUrl
+      ) {
+        throw new Error(
+          'Paystack did not return a payment URL.',
+        )
+      }
+
+      /*
+       * ------------------------------------------------------
+       * Redirect customer to Paystack
+       * ------------------------------------------------------
+       *
+       * DO NOT:
+       *
+       * setPlaced(true)
+       * clearCart()
+       * send receipt
+       *
+       * yet.
+       *
+       * Payment has only been initialized.
+       *
+       * Those happen after successful verification.
+       */
+
+      window.location.assign(
+        authorizationUrl,
+      )
+
+      return
+    }
+
+    throw new Error(
+      'Invalid payment method.',
     )
-
-
-    setPlaced(true)
-
   } catch (error) {
-
     console.error(
       'Checkout failed:',
       error,
@@ -2961,10 +3097,8 @@ const handleSubmit = async (
     setFormError(
       error instanceof Error
         ? error.message
-        : 'Unable to place your order.',
+        : 'Unable to process your order.',
     )
-
-  } finally {
 
     setIsSubmitting(false)
   }

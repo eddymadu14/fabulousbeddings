@@ -15,6 +15,13 @@
       "when": 1787140032149,
       "tag": "0001_productive_susan_delgado",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787232929546,
+      "tag": "0002_outgoing_mystique",
+      "breakpoints": true
     }
   ]
 }
