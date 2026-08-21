@@ -1778,11 +1778,7 @@ export function ShopPageContent({
 
         {/* Categories */}
         <div
-          className={`${
-            mobileFilters
-              ? 'flex'
-              : 'hidden'
-          } flex-wrap gap-2 border-b border-border py-5 md:flex`}
+          className="flex flex-wrap gap-2 border-b border-border py-5 md:flex"
         >
           <button
             type="button"
