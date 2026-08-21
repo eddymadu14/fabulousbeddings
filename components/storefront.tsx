@@ -2759,6 +2759,9 @@ export function CheckoutPage() {
 
   const [placed, setPlaced] =
     useState(false)
+    
+const searchParams =
+  useSearchParams()
 
   const [isSubmitting, setIsSubmitting] =
     useState(false)
@@ -2797,6 +2800,71 @@ const [paymentMethod, setPaymentMethod] =
   useState<'pay_on_delivery' | 'card_bank'>(
     'pay_on_delivery',
   )
+
+  
+
+useEffect(() => {
+  const payment =
+    searchParams.get(
+      'payment',
+    )
+
+  const orderId =
+    searchParams.get(
+      'order',
+    )
+
+  const email =
+    searchParams.get(
+      'email',
+    )
+
+  if (
+    payment !== 'success' ||
+    !orderId
+  ) {
+    return
+  }
+
+  const parsedOrderId =
+    Number(orderId)
+
+  if (
+    !Number.isFinite(
+      parsedOrderId,
+    )
+  ) {
+    return
+  }
+
+  if (email) {
+    setCheckout(
+      (current) => ({
+        ...current,
+        email,
+      }),
+    )
+  }
+
+  setPlacedOrder({
+    id: parsedOrderId,
+    total: 0,
+  })
+
+  setPaymentMethod(
+    'card_bank',
+  )
+
+  setReceiptSent(true)
+
+  setPlaced(true)
+
+  window.history.replaceState(
+    {},
+    '',
+    '/checkout',
+  )
+}, [searchParams])
     
   const updateCheckoutField = (
     field: keyof typeof checkout,
@@ -3140,10 +3208,13 @@ const handleSubmit = async (
       </p>
     )}
 
-    <p className="mx-auto mt-6 max-w-md text-sm leading-7 text-muted-foreground">
-      Your Pay on Delivery order has
-      been received successfully and on its way to becoming part of your home.
-    </p>
+   
+<p className="mx-auto mt-6 max-w-md text-sm leading-7 text-muted-foreground">
+  {paymentMethod ===
+  'card_bank'
+    ? 'Your payment has been received successfully and your order is on its way to becoming part of your home.'
+    : 'Your Pay on Delivery order has been received successfully and is on its way to becoming part of your home.'}
+</p>
 
     
 

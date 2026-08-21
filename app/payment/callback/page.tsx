@@ -82,17 +82,40 @@ function PaymentCallbackContent() {
            * happened server-side.
            */
 
-          window.setTimeout(() => {
-            if (data.orderId) {
-              router.replace(
-                `/thank-you?order=${encodeURIComponent(
-                  String(data.orderId),
-                )}`,
-              )
-            } else {
-              router.replace('/thank-you')
-            }
-          }, 800)
+      
+window.setTimeout(() => {
+  if (!data.order?.id) {
+    setStatus('failed')
+    setMessage(
+      'Payment was successful, but we could not identify your order.',
+    )
+    return
+  }
+
+ const params = new URLSearchParams()
+
+params.set(
+  'payment',
+  'success',
+)
+
+params.set(
+  'order',
+  String(data.order.id),
+)
+
+if (data.order.customerEmail) {
+  params.set(
+    'email',
+    data.order.customerEmail,
+  )
+}
+
+router.replace(
+  `/checkout?${params.toString()}`,
+
+  )
+}, 800)
 
           return
         }

@@ -183,23 +183,35 @@ export async function POST(
         reference,
       )
 
-    return NextResponse.json({
-      success: true,
+ 
+return NextResponse.json({
+  success: true,
 
-      order: {
-        id:
-          result.order.id,
+  order: {
+    id:
+      result.order.id,
 
-        paymentStatus:
-          result.order.paymentStatus,
+    total:
+      result.order.total,
 
-        orderStatus:
-          result.order.orderStatus,
-      },
+    email:
+      result.order.customerEmail,
 
-      alreadyProcessed:
-        result.alreadyProcessed,
-    })
+    paymentStatus:
+      result.order.paymentStatus,
+
+    orderStatus:
+      result.order.orderStatus,
+
+    paymentMethod:
+      result.order.paymentMethod,
+  },
+
+  alreadyProcessed:
+    result.alreadyProcessed,
+})
+
+
   } catch (error) {
     console.error(
       'Payment verification failed:',
