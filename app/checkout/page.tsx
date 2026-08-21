@@ -1,4 +1,8 @@
 import {
+  Suspense,
+} from 'react'
+
+import {
   getPublishedCategories,
   getPublishedProducts,
 } from '@/lib/storefront'
@@ -22,7 +26,17 @@ export default async function Page() {
       products={products}
       categories={categories}
     >
-      <CheckoutPage />
+      <Suspense
+        fallback={
+          <div className="flex min-h-[60vh] items-center justify-center">
+            <p className="text-sm text-muted-foreground">
+              Loading checkout...
+            </p>
+          </div>
+        }
+      >
+        <CheckoutPage />
+      </Suspense>
     </StorefrontShell>
   )
 }
