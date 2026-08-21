@@ -209,6 +209,9 @@ return NextResponse.json({
 
   alreadyProcessed:
     result.alreadyProcessed,
+
+  notifications:
+  result.notifications ?? null,
 })
 
 

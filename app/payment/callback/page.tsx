@@ -3,10 +3,28 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
+
 type VerificationResult = {
   success?: boolean
   paid?: boolean
-  orderId?: string | number
+
+  order?: {
+    id: number
+    total: number
+    customerEmail: string
+    paymentStatus: string
+    orderStatus: string
+    paymentMethod: string
+  }
+
+  alreadyProcessed?: boolean
+
+  notifications?: {
+    customerEmailSent?: boolean
+    ownerEmailSent?: boolean
+    telegramSent?: boolean
+  }
+
   reference?: string
   message?: string
   error?: string
