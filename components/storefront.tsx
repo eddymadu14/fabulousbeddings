@@ -31,6 +31,8 @@ import {
   Mail,
   Phone,
   MapPin,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 
 import {
@@ -1887,6 +1889,18 @@ export function ProductPage({
     addToCart,
   } = useStorefrontData()
 
+  
+const [
+  activeImage,
+  setActiveImage,
+] = useState(0)
+
+const productImages =
+  product.images?.length
+    ? product.images
+    : [product.image]
+
+
   const [
     selectedSize,
     setSelectedSize,
@@ -2023,15 +2037,92 @@ const handleAddToCart = () => {
               PRODUCT IMAGE
               ================================================= */}
 
-          <div className="bg-secondary">
-            <div className="aspect-[4/5] overflow-hidden">
-              <img
-                src={product.image}
-                alt={product.name}
-                className="size-full object-cover"
-              />
-            </div>
-          </div>
+         
+<div className="bg-secondary">
+  <div className="relative aspect-[4/5] overflow-hidden">
+    <img
+      src={
+        productImages[
+          activeImage
+        ]
+      }
+      alt={`${product.name} ${
+        activeImage + 1
+      }`}
+      className="size-full object-cover transition-opacity duration-300"
+    />
+
+    {productImages.length >
+      1 && (
+      <>
+        <button
+          type="button"
+          onClick={() =>
+            setActiveImage(
+              (current) =>
+                current === 0
+                  ? productImages.length -
+                    1
+                  : current - 1,
+            )
+          }
+          aria-label="Previous product image"
+          className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-sm transition hover:bg-background"
+        >
+          <ChevronLeft className="size-4" />
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            setActiveImage(
+              (current) =>
+                current ===
+                productImages.length - 1
+                  ? 0
+                  : current + 1,
+            )
+          }
+          aria-label="Next product image"
+          className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-background/90 shadow-sm transition hover:bg-background"
+        >
+          <ChevronRight className="size-4" />
+        </button>
+      </>
+    )}
+  </div>
+
+  {productImages.length > 1 && (
+    <div className="flex gap-2 overflow-x-auto p-3">
+      {productImages.map(
+        (image, index) => (
+          <button
+            key={`${image}-${index}`}
+            type="button"
+            onClick={() =>
+              setActiveImage(index)
+            }
+            aria-label={`View product image ${
+              index + 1
+            }`}
+            className={`size-16 shrink-0 overflow-hidden border-2 transition ${
+              activeImage === index
+                ? 'border-primary'
+                : 'border-transparent'
+            }`}
+          >
+            <img
+              src={image}
+              alt=""
+              className="size-full object-cover"
+            />
+          </button>
+        ),
+      )}
+    </div>
+  )}
+</div>
+
 
           {/* =================================================
               PRODUCT INFORMATION
@@ -2046,7 +2137,7 @@ const handleAddToCart = () => {
 
             {/* Name */}
 
-            <h1 className="mt-3 font-serif text-4xl tracking-tight sm:text-5xl lg:text-6xl">
+            <h1 className="mt-3 font-serif text-2xl tracking-tight sm:text-1xl lg:text-2xl">
               {product.name}
             </h1>
 
@@ -2060,7 +2151,7 @@ const handleAddToCart = () => {
                   (_, index) => (
                     <Star
                       key={index}
-                      className="size-4 fill-current"
+                      className="size-3 fill-current"
                     />
                   ),
                 )}
@@ -2079,7 +2170,7 @@ const handleAddToCart = () => {
             {/* Price */}
 
             <div className="mt-6 flex items-center gap-3">
-              <span className="font-serif text-2xl">
+              <span className="font-serif text-1xl">
                 {formatPrice(
                   selectedVariant?.price ??
                   product.price,
@@ -2411,7 +2502,7 @@ const handleAddToCart = () => {
                   You may also like
                 </p>
 
-                <h2 className="mt-3 font-serif text-4xl tracking-tight sm:text-5xl">
+                <h2 className="mt-3 font-serif text-2xl tracking-tight sm:text-3xl">
                   More from the
                   collection
                 </h2>
@@ -2427,7 +2518,7 @@ const handleAddToCart = () => {
               </Link>
             </div>
 
-            <div className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-3">
+<div className="mt-10 grid gap-x-4 gap-y-10 sm:grid-cols-2 lg:grid-cols-5">
               {related.map(
                 (relatedProduct) => (
                   <ProductCard

@@ -221,6 +221,15 @@ function normalizeProduct(
         a.sortOrder - b.sortOrder,
     )
 
+    
+const imageUrls =
+  sortedImages.length > 0
+    ? sortedImages.map(
+        (image) => image.url,
+      )
+    : [product.image]
+
+
   const variantPrices =
     activeVariants.map(
       (variant) => variant.price,
@@ -259,6 +268,9 @@ const normalizedVariants =
     image:
       sortedImages[0]?.url ??
       product.image,
+
+      images:
+      imageUrls,
 
     rating:
       getProductRating(product.id),
