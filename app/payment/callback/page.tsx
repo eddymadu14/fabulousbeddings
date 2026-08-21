@@ -11,7 +11,7 @@ type VerificationResult = {
   order?: {
     id: number
     total: number
-    customerEmail: string
+    email: string
     paymentStatus: string
     orderStatus: string
     paymentMethod: string
@@ -122,10 +122,10 @@ params.set(
   String(data.order.id),
 )
 
-if (data.order.customerEmail) {
+if (data.order.email) {
   params.set(
     'email',
-    data.order.customerEmail,
+    data.order.email,
   )
 }
 
