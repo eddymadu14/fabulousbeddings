@@ -741,7 +741,7 @@ function Header({
         {/* Logo */}
         <Link
           href="/"
-          className="font-serif text-2xl font-semibold tracking-tight text-primary md:text-[23px]"
+          className="font-serif text-2xl font-semibold tracking-tight text-primary md:text-[28px]"
         >
           fabulous
           <span className="font-sans text-[11px] font-medium uppercase tracking-[0.35em] text-accent-foreground">
@@ -793,7 +793,7 @@ function Header({
             <>
               <Link
                 href="/sign-in"
-                className="px-2 py-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-primary"
+                className="hidden px-2 py-2 text-[10px] uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-primary sm:block"
               >
                 Login
               </Link>
