@@ -145,7 +145,7 @@ export function getCartCount(cart: CartItem[]): number {
  */
 
 export const heroImage =
-  'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1800&q=90'
+  'https://images.unsplash.com/photo-1617104678098-de229db51175?auto=format&fit=crop&w=900&q=85'
 
 export const editorialImage =
   'https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?auto=format&fit=crop&w=1200&q=85'

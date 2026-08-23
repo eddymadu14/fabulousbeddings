@@ -741,7 +741,7 @@ function Header({
         {/* Logo */}
         <Link
           href="/"
-          className="font-serif text-2xl font-semibold tracking-tight text-primary md:text-[28px]"
+          className="font-serif text-2xl font-semibold tracking-tight text-primary md:text-[23px]"
         >
           fabulous
           <span className="font-sans text-[11px] font-medium uppercase tracking-[0.35em] text-accent-foreground">
