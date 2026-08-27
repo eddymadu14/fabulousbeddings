@@ -133,8 +133,6 @@ ${paymentWarning}
           text:
             message,
 
-          parse_mode:
-            'Markdown',
         }),
       },
     )
