@@ -97,9 +97,9 @@ export async function sendTelegramOrderAlert(
 *Customer*
 ${escapeMarkdown(order.customerName)}
 
-📧 ${escapeMarkdown(order.customerEmail)}
+📧 ${order.customerEmail}
 
-📞 ${escapeMarkdown(order.customerPhone)}
+📞 ${order.customerPhone}
 
 
 *Delivery*
