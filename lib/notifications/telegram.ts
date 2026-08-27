@@ -1,6 +1,11 @@
 
 import 'server-only'
 
+function escapeMarkdown(value: unknown): string {
+  return String(value ?? '')
+    .replace(/([_*[\]()~`>#+\-=|{}.!])/g, '\\$1')
+}
+
 type TelegramOrder = {
   id: number
 
@@ -90,29 +95,37 @@ export async function sendTelegramOrderAlert(
 *Order:* #${order.id}
 
 *Customer*
-${order.customerName}
+${escapeMarkdown(order.customerName)}
 
-📧 ${order.customerEmail}
+📧 ${escapeMarkdown(order.customerEmail)}
 
-📞 ${order.customerPhone ?? 'Not provided'}
+📞 ${escapeMarkdown(order.customerPhone)}
+
 
 *Delivery*
-${order.shippingAddress}
-${order.shippingCity}, ${order.shippingState}
+${escapeMarkdown(order.shippingAddress)}
+${escapeMarkdown(order.shippingCity)}, ${escapeMarkdown(order.shippingState)}
 
-🚚 ${order.deliveryMethod}
+🚚 ${escapeMarkdown(order.deliveryMethod)}
 
-💳 ${order.paymentMethod}
+💳 ${escapeMarkdown(order.paymentMethod)}
 
 *Payment:* ${paymentLabel}
 
 ${paymentWarning}
 
-*Subtotal:* ${money(order.subtotal)}
+*Subtotal:* ₦${escapeMarkdown(
+  order.subtotal.toLocaleString(),
+)}
 
-*Delivery:* ${money(order.deliveryFee)}
+*Delivery:* ₦${escapeMarkdown(
+  order.deliveryFee.toLocaleString(),
+)}
 
-*TOTAL:* ${money(order.total)}
+*TOTAL:* ₦${escapeMarkdown(
+  order.total.toLocaleString(),
+)}
+
 `.trim()
 
   const response =
@@ -133,6 +146,8 @@ ${paymentWarning}
           text:
             message,
 
+          parse_mode:
+            'Markdown',
         }),
       },
     )
