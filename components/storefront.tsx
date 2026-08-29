@@ -2696,9 +2696,8 @@ const unitPrice =
                             type="button"
                             onClick={() =>
                               updateQuantity(
-                                productId,
-                                variantId,
-                                      - 1,
+                                id,
+                                - 1,
                               )
                             }
                             className="p-2 hover:bg-secondary"
@@ -2717,8 +2716,7 @@ const unitPrice =
                             type="button"
                             onClick={() =>
                               updateQuantity(
-                                productId,
-                                variantId,
+                                id,
                                   + 1,
                               )
                             }
@@ -2732,10 +2730,7 @@ const unitPrice =
                         <button
                           type="button"
                           onClick={() =>
-                            removeFromCart(
-                              productId,
-                              variantId,
-                            )
+                            removeFromCart(id)
                           }
                           className="text-xs uppercase tracking-[0.12em] text-muted-foreground hover:text-primary"
                         >
