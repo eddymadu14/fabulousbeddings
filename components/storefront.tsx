@@ -184,21 +184,23 @@ export function StorefrontShell({
 
 
 
+
+
 useEffect(() => {
   let cancelled = false
 
   async function loadCart() {
     try {
       const response =
-        await fetch(
-          '/api/cart',
-          {
-            credentials:
-              'include',
-          },
-        )
+        await fetch('/api/cart', {
+          credentials: 'include',
+        })
 
       if (!response.ok) {
+        if (!cancelled) {
+          setCartLoaded(true)
+        }
+
         return
       }
 
@@ -206,9 +208,7 @@ useEffect(() => {
         await response.json()
 
       if (!cancelled) {
-        setCart(
-          data.items ?? [],
-        )
+        setCart(data.items ?? [])
         setCartLoaded(true)
       }
     } catch (error) {
@@ -216,7 +216,8 @@ useEffect(() => {
         'Failed to load cart',
         error,
       )
-      if (!cancelled){
+
+      if (!cancelled) {
         setCartLoaded(true)
       }
     }
@@ -228,7 +229,6 @@ useEffect(() => {
     cancelled = true
   }
 }, [])
-
 
   const [wishlist, setWishlist] =
     useState<string[]>([])
@@ -3395,20 +3395,10 @@ const handleSubmit = async (
         <ShoppingBag className="size-10 text-muted-foreground/50" />
 
         <h1 className="mt-5 font-serif text-4xl">
-          Your bag is empty
+          Loading your Order...
         </h1>
 
-        <p className="mt-3 text-sm text-muted-foreground">
-          Add something to your bag
-          before checking out.
-        </p>
-
-        <Link
-          href="/shop"
-          className="mt-7 bg-primary px-6 py-4 text-xs uppercase tracking-[0.14em] text-primary-foreground"
-        >
-          Shop the collection
-        </Link>
+       
       </div>
     )
   }
