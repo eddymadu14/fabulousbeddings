@@ -61,6 +61,7 @@ type StorefrontData = {
   categories: StorefrontCategory[]
 
   cart: CartItem[]
+  cartLoaded:boolean
 
   addToCart: (
     productId: string,
@@ -178,6 +179,9 @@ export function StorefrontShell({
   const [cart, setCart] =
     useState<CartItem[]>([])
 
+    const [cartLoaded, setCartLoaded] =
+  useState(false)
+
 
 
 useEffect(() => {
@@ -205,12 +209,16 @@ useEffect(() => {
         setCart(
           data.items ?? [],
         )
+        setCartLoaded(true)
       }
     } catch (error) {
       console.error(
         'Failed to load cart',
         error,
       )
+      if (!cancelled){
+        setCartLoaded(true)
+      }
     }
   }
 
@@ -613,6 +621,7 @@ body: JSON.stringify({
         products,
         categories, 
         cart, 
+        cartLoaded,
         addToCart,
         updateQuantity,
         removeFromCart,
@@ -975,6 +984,7 @@ removeFromCart: (
 
   const {
     products,
+    cartLoaded,
   } = useStorefrontData()
 
   const items =
@@ -1034,6 +1044,16 @@ removeFromCart: (
         </div>
 
         {/* Items */}
+
+        
+{!cartLoaded ? (
+  <div className="flex h-full items-center justify-center text-center">
+    <p className="text-sm text-muted-foreground">
+      Loading your bag...
+    </p>
+  </div>
+) : (
+ 
         <div className="flex-1 overflow-y-auto px-6 py-6">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-center">
@@ -1180,6 +1200,7 @@ removeFromCart: (
             </div>
           )}
         </div>
+)}
 
         {/* Summary */}
         {items.length > 0 && (
@@ -2546,6 +2567,7 @@ export function CartPage() {
     products,
     updateQuantity,
     removeFromCart,
+    cartLoaded,
   } = useStorefrontData()
 
   const items =
@@ -2565,6 +2587,7 @@ export function CartPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-12 lg:px-10 lg:py-20">
+
       {/* =====================================================
           HEADER
           ===================================================== */}
@@ -2591,6 +2614,14 @@ export function CartPage() {
       {/* =====================================================
           CART
           ===================================================== */}
+
+          {!cartLoaded ? (
+  <div className="py-16 text-center lg:col-span-2">
+    <p className="text-sm text-muted-foreground">
+      Loading your bag...
+    </p>
+  </div>
+) : (
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_360px]">
         {items.length > 0 ? (
@@ -2627,6 +2658,8 @@ const unitPrice =
 
               const lineTotal =
   unitPrice * quantity
+
+  
                 return (
                   <div
                     key={`${product.id}-${size}-${color}-${variantId ?? 'default' }`}
@@ -2828,7 +2861,7 @@ const unitPrice =
           </aside>
         )}
       </div>
-    </div>
+)}</div>
   )
 }
 
