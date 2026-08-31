@@ -3394,11 +3394,13 @@ const handleSubmit = async (
       <div className="mx-auto flex min-h-[60vh] max-w-xl flex-col items-center justify-center px-5 py-20 text-center">
         <ShoppingBag className="size-10 text-muted-foreground/50" />
 
-        <h1 className="mt-5 font-serif text-4xl">
-          Loading your Order...
-        </h1>
-
        
+
+        <p className="mt-3 text-sm text-muted-foreground">
+          Loading your Order...
+        </p>
+
+      
       </div>
     )
   }
